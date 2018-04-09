@@ -546,6 +546,8 @@ bool file_search(Violet::Buffer<T> &buff, S && sv, const char * folder)
 	return false;
 }
 
+#include <iostream>
+
 void MasterSocket::HandleRequest()
 {
 	if (!received)
@@ -710,7 +712,7 @@ void MasterSocket::HandleRequest()
 		}
 		if (!error) {
 			if (filename.substr(1, 8) == "captcha.") {
-				auto capf = std::find_if(Captcha::Signature::registry.begin(), Captcha::Signature::registry.end(), [sv = filename.substr(9)] (const auto &c) { return std::string_view{c.first.PicFilename.data(), c.first.PicFilename.size() - 1} == sv; });
+				auto capf = std::find_if(Captcha::Signature::registry.begin(), Captcha::Signature::registry.end(), [sv = filename.substr(9)] (const auto &c) { return c.first.PicFilename == sv; });
 				if (capf != Captcha::Signature::registry.end()) {
 					auto ef = capf->first.Data.get();
 					Captcha::Signature::registry.erase(capf);

@@ -38,7 +38,7 @@ void Captcha::Init::Kickstart(bool gen_filename) {
 	std::seed_seq ssq(seed.begin(), seed.end());
 	std::minstd_rand rdev{ ssq };
 
-	std::uniform_int_distribution<unsigned> d1(0, 3), d2(1, 8);
+	std::uniform_int_distribution<unsigned> d1(0, 2), d2(1, 8);
 	for (auto &it : Imt.Collection)
 		it = { static_cast<uint8_t>(d1(rdev)), static_cast<uint8_t>(d2(rdev)) };
 	Imt.Collection[0].first = 0;
