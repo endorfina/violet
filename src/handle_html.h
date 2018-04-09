@@ -1,0 +1,709 @@
+/*
+    Copyright © 2018 Emilia "Endorfina" Majewska
+
+    This file is part of Violet.
+
+    Violet is free software: you can study it, redistribute it
+    and/or modify it under the terms of the GNU General Public License
+    as published by the Free Software Foundation, either version 3 of
+    the License, or (at your option) any later version.
+
+    Violet is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Violet.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#pragma once
+
+template<typename T, typename = void>
+struct is_view : std::false_type {};
+
+template<typename... Ts>
+struct is_view_helper {};
+
+template<typename T>
+struct is_view<
+        T,
+        std::conditional_t<
+            false,
+            is_view_helper<
+                typename T::size_type,
+                decltype(std::declval<T>().size()),
+                decltype(std::declval<T>().begin()),
+                decltype(std::declval<T>().end()),
+                decltype(std::declval<T>().remove_prefix(0))
+                >,
+            void
+            >
+        > : public std::true_type {};
+
+template<typename A>
+static void skip_potential_bom(A &text)
+{
+	if constexpr (is_view<A>::value) {
+		if (text.size() < 3)
+			return;
+	}
+	if (static_cast<unsigned char>(text[0]) == 0xef && 
+		static_cast<unsigned char>(text[1]) == 0xbb && 
+		static_cast<unsigned char>(text[2]) == 0xbf)
+	{
+		if constexpr (is_view<A>::value)
+			text.remove_prefix(3);
+		else
+			text += 3;
+	}
+}
+
+template<typename A>
+inline const A * __find(const A * p, const size_t n, const A c) {
+	for (size_t i = 0; i < n; ++i, ++p)
+		if (*p == c)
+			return p;
+	return nullptr;
+}
+
+template<typename A>
+inline const A * __find7(const A * p, const size_t n, const A c) {
+	for (size_t i = 0; i < n;) {
+		const auto len = Violet::internal::utf8x::sequence_length(p);
+		if (len > 1 && len <= 4) {
+			i += len;
+			p += len;
+			continue;
+		}
+		else if (*p == c)
+			return p;
+		++i; ++p;
+	}
+	return nullptr;
+}
+
+template<typename A>
+const A * __find7q(const A * p, const size_t n, const A c) {
+	for (size_t i = 0; i < n;) {
+		const auto len = Violet::internal::utf8x::sequence_length(p);
+		const auto q = *p;
+		if (len > 1 && len <= 4) {
+			i += len;
+			p += len;
+			continue;
+		}
+		else if (q == c)
+			return p;
+		else if (q == '\"' || q == '\'')
+			do { ++i; ++p; }
+			while (*p != q && i < n);
+		++i; ++p;
+	}
+	return nullptr;
+}
+
+template<typename A>
+size_t find_skip_utf8(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
+{
+	size_t __ret = std::basic_string_view<A>::npos;
+	const size_t __size = __s.size();
+	if (__pos < __size)
+	{
+		const A * __data = __s.data();
+		const size_t __n = __size - __pos;
+		const A * __p = __find7<A>(__data + __pos, __n, __c);
+		if (__p)
+		__ret = __p - __data;
+	}
+	return __ret;
+}
+
+template<typename A>
+size_t find_skip_utf8q(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
+{
+	size_t __ret = std::basic_string_view<A>::npos;
+	const size_t __size = __s.size();
+	if (__pos < __size)
+	{
+		const A * __data = __s.data();
+		const size_t __n = __size - __pos;
+		const A * __p = __find7q<A>(__data + __pos, __n, __c);
+		if (__p)
+		__ret = __p - __data;
+	}
+	return __ret;
+}
+
+template<class InOutContainer, class ViewT,
+	typename = std::enable_if_t<std::is_same_v<ViewT, typename InOutContainer::view_t>>>
+void WrapHTML(InOutContainer &f, const ViewT& wrapper_content, const ViewT& wrapper_title)
+{
+	ViewT src = f.get_string();
+	InOutContainer out;
+	bool found_content = false;
+
+	while (true)
+		if (auto pos = find_skip_utf8(src, '{'), pose = pos != ViewT::npos ? find_skip_utf8(src, '}', pos + 1) : ViewT::npos;
+				pose == ViewT::npos || src.size() < 3) {
+			if (out.size())
+				out.write(src);
+			break;
+		}
+		else {
+			const ViewT key = src.substr(pos + 1, pose++ - pos - 1);
+			if (!found_content && key == ViewT{"content"}) {
+				out.write(src.substr(0, pos));
+				out.write(wrapper_content);
+				found_content = true;
+			}
+			else if (key == ViewT{"title"}) {
+				out.write(src.substr(0, pos));
+				out.write(wrapper_title);
+			}
+			else {
+				out.write(src.substr(0, pose));
+			}
+			if (pose > src.size())
+				break;
+			src.remove_prefix(pose);
+		}
+	
+	if (found_content)
+		f.swap(out);
+}
+
+inline bool IsCommand(const char c) {
+	return (c >= '!' && c <= '~' && c != '=' && c != ',' && c != ':' && c != '(' && c != ')');
+}
+
+template<class View>
+inline size_t FindBlockEnclosure(const View& src, const size_t start) {
+	size_t p1 = start, p2 = start;
+	unsigned inner_block_count = 0;
+	bool found_exit_node = false;
+	do {
+		p1 = find_skip_utf8(src, '{', p2);
+		if (p1 != View::npos)
+			p2 = find_skip_utf8q(src, '}', p1);
+		else { p2 = View::npos; break; }
+		if (p2 == View::npos)
+			break;
+		++p2;
+		if (src.substr(p1 + 1, 6) == View{"block:"})
+			++inner_block_count;
+		else if (src.substr(p1 + 1, 6) == View{"/block"}) //Change to 7 chars ( "/block}" ) - Optional!
+			if (inner_block_count < 1)
+				found_exit_node = true;
+			else --inner_block_count;
+	} while (!found_exit_node && p2 != View::npos && p1 != View::npos);
+	return p2;
+}
+
+template<typename A>
+inline bool IsMeaningful(A c)
+{
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == '?' || c == '/';
+}
+
+void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
+{
+	auto src = h.get_string();
+	skip_potential_bom(src);
+	
+	if (find_skip_utf8(src, '{') != std::string_view::npos)
+	{
+		Violet::UniBuffer f;
+		size_t read_pos = 0, end_read_pos = 0;
+		while (read_pos < src.length())
+		{
+			if (src[read_pos] == 0xa)
+				++read_pos;
+			else if (src[read_pos] == 0xd && src[read_pos + 1] == 0xa)
+				if ((read_pos += 2) >= src.length())
+					break;
+			size_t pos, pose = read_pos;
+
+			std::string_view c;
+			do {
+				pos = find_skip_utf8(src, '{', pose);
+				if (pos == std::string::npos) break;
+				c = src.substr(std::min(src.length(), pos + 1));
+				if (IsMeaningful(c.front())) break;
+				pose = pos + 1;
+			} while(pose < src.length());
+			if (pos != std::string::npos) {
+				pose = find_skip_utf8q(src, '}', pos);
+				if (pose == std::string::npos)
+					pos = std::string::npos;
+				else
+					c.remove_suffix(src.length() - pose++);
+			}
+			else pose = std::string::npos;
+
+			end_read_pos = std::min(src.length(), pos);
+			if (end_read_pos - read_pos > 0)
+				f.write(src.substr(read_pos, end_read_pos - read_pos));
+			if (pos != std::string::npos && c.front() != '/' && c.front() != '?')
+			{
+				const Curly::Tag tag(c);
+				if(tag.GetType() != Curly::modError)
+				switch (tag.GetTag())
+				{
+				case Curly::tagBlock:
+					{
+						bool skip = true;
+						const auto name = tag.GetObj(0).str;
+						if (name == "Session")
+						{
+							if (ss != nullptr)
+								skip = false;
+						}
+						else if (name == "NoSession")
+						{
+							if (ss == nullptr)
+								skip = false;
+						}
+						else if (name == "Plain") {
+							const size_t start = pose;
+							pose = FindBlockEnclosure(src, start);
+							if (pose != std::string::npos) {
+								const size_t encl = src.find_last_of('{', pose - 1);
+								if (encl > start) {
+									std::string w(src.data() + start, encl - start);
+									for (auto c : w)
+										if (c >= 0x20)
+											f.write(c);
+										else if (c == 0xa)
+											f.write("<br>"sv);
+								}
+							}
+							break;
+						}
+						else if (tag.GetObjCount() == 3 && name == "Userlevel" && !tag.GetObj(1).is_string && tag.GetObj(2).is_string)
+						{
+							if (ss != nullptr) {
+								unsigned val;
+								if (sscanf(tag.GetObj(2).str.data(), "%u", &val) == 1)
+									switch (tag.GetObj(1).val) {
+									case '=': case 0x3d3d: // "=="
+										if (val == ss->userlevel) skip = false;
+										break;
+									case '>':
+										if (val < ss->userlevel) skip = false;
+										break;
+									case '<':
+										if (val > ss->userlevel) skip = false;
+										break;
+									}
+							}
+						}
+						if (skip)
+						{
+							pose = FindBlockEnclosure(src, pose);
+						}
+					}
+					break;
+					
+					
+				case Curly::tagBlockArray:
+					{
+						bool skip = true;
+						if (tag.GetObjCount() > 1 && tag.GetObj(0).is_string && tag.GetObj(1).is_string)
+						{
+							if (auto db = info.FetchList(tag.GetObj(0).str); db)
+							{
+								auto f = std::find_if(db->begin(), db->end(), [str = tag.GetObj(1).str](StringPair&p) { return p.first == str; });
+								if (f != db->end())
+								{
+									if (tag.GetObjCount() > 2)
+									{
+										if (tag.GetObjCount() == 4 && !tag.GetObj(2).is_string && tag.GetObj(3).is_string)
+											{
+												long v1, v2;
+												if (sscanf(f->second.c_str(), "%ld", &v1) == 1 && sscanf(tag.GetObj(3).str.data(), "%ld", &v2) == 1)
+													switch (tag.GetObj(2).val) {
+													case '=': case 0x3d3d: // "=="
+														if (v1 == v2) skip = false;
+														break;
+													case '>':
+														if (v1 > v2) skip = false;
+														break;
+													case '<':
+														if (v1 < v2) skip = false;
+														break;
+													}
+												else switch (tag.GetObj(2).val) {
+													case '=': case 0x3d3d: // "=="
+														if (f->second == tag.GetObj(3).str) skip = false;
+														break;
+													}
+											}
+									}
+									else
+									{
+										skip = false;
+									}
+								}
+							}
+						}
+						if (skip)
+						{
+							pose = FindBlockEnclosure(src, pose);
+						}
+					}
+					break;
+
+
+				case Curly::tagEcho:
+					if(tag.GetObjCount() == 1)
+						if (tag.GetObj(0).child)
+						{
+							if (auto db = info.FetchList(tag.GetObj(0).str); db)
+							{
+								if (auto a = std::find_if(db->begin(), db->end(), [str = tag.GetObj(0).child->str](StringPair&p) { return p.first == str; });
+									a != db->end())
+									f.write<std::string_view>(a->second);
+							}
+						}
+						else
+						{
+							if (auto a = std::find_if(info.clipboard.begin(), info.clipboard.end(), [str = tag.GetObj(0).str](StringPair&p) { return p.first == str; });
+								a != info.clipboard.end())
+								f.write<std::string_view>(a->second);
+						}
+					break;
+
+				case Curly::tagStatusErrorCode:
+					if (error) {
+						f.write(std::to_string(static_cast<int>(error)));
+					}
+					break;
+
+				case Curly::tagStatusErrorText:
+					switch (error)
+						{
+						case 400:
+							f.write("Bad Request"sv);
+							break;
+						case 403:
+							f.write("Forbidden"sv);
+							break;
+						case 404:
+							f.write("Not Found"sv);
+							break;
+						case 405:
+							f.write("Method Not Allowed"sv);
+							break;
+						case 416:
+							f.write("Requested Range Not Satisfiable"sv);
+							break;
+						case 501:
+							f.write("Not Implemented"sv);
+							break;
+						}
+					break;
+
+				case Curly::tagCopyright:
+					f.write("&copy;&nbsp;2017&nbsp;0x65"sv);
+					break;
+
+				case Curly::tagBitcoin:
+					f.write("<a href=\"http://bitcoin.org\" target=_blank>BitCoin</a>:&nbsp;<a class=\"bitcoin_link\" href=\"bitcoin:1JGduM5un6Q6LqGQckkTH2FUs8p36NF3t9\">1JGduM5un6Q6LqGQckkTH2FUs8p36NF3t9</a>"sv);
+					break;
+
+				case Curly::tagBattery:
+
+					break;
+
+				case Curly::tagInclude:
+					if (tag.GetObjCount() == 1 && tag.GetObj(0).is_string)
+					{
+						std::string fn(dir_html);
+						fn += '/';
+						fn += tag.GetObj(0).str;
+						fn += ".html";
+						Violet::UniBuffer t;
+						if (t.read_from_file(fn.c_str())) {
+							auto v = t.get_string();
+							skip_potential_bom(v);
+							f << v;
+						}
+					}
+					break;
+					
+				case Curly::tagWrapper:
+					if (tag.GetObjCount() >= 1)
+					{
+						const std::string fn{ "html/wrapper_" + std::string(tag.GetObj(0).str.data(), tag.GetObj(0).str.length()) + ".html" };
+						
+						Violet::UniBuffer t;
+						if (t.read_from_file(fn.c_str())) {
+							WrapHTML(t, src.substr(pose), tag.GetObjCount() > 1 ? tag.GetObj(1).str : "Untitled");
+							t.swap(h);
+							src = h.get_string();
+							skip_potential_bom(src);
+							pose = 0;
+						}
+					}
+					break;
+
+				case Curly::tagGenerateCaptcha:
+					if (tag.GetType() == Curly::modTrigger)
+					{
+						Captcha::Init c;
+						c.Kickstart();
+						
+						info.clipboard.emplace_back("captcha_seed", c.seed);
+						info.clipboard.emplace_back("captcha_image", c.Imt.PicFilename.data());
+						c.Imt.Data = std::async(std::launch::async, Captcha::Image::proc, c.Imt.Collection);
+						active_captchas.emplace_back(std::move(c.Imt), time(nullptr));
+					}
+					break;
+
+				case Curly::tagStartSession:
+					if (ss == nullptr && dir_accounts)
+					{
+						const size_t count = tag.GetObjCount();
+						std::vector<std::string> data;
+						std::string error_msg;
+						while (info.method == Hi::Method::Post && tag.GetType() == Curly::modFunction && count > 1)
+						{
+							bool ok = true;
+							const char * e = "Invalid username and/or password.<br>";
+							data.reserve(count);
+							for (unsigned i = 0; i < count; ++i)
+							{
+								auto p = std::find_if(info.post.begin(), info.post.end(), [str = tag.GetObj(i).str](StringPair &k) { return k.first == str; });
+								if (p == info.post.end())
+									ok = false;
+								else data.emplace_back(p->second);
+							}
+							if (!ok) break;
+							if (data[0].empty())
+							{
+								error_msg += "Username field is empty!<br>";
+								break;
+							}
+							else if (data[0].back() <= 0x20)
+								data[0].resize(data[0].length() - 1);
+							auto ct = std::remove_if(data[0].begin(), data[0].end(), [](char c) { return (c == '\"' || c == '\''); });
+							data[0].erase(ct, data[0].end());
+							info.clipboard.emplace_back(tag.GetObj(0).str, data[0]);
+							{
+								auto e = std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !IsUsernameAcceptable(c); });
+								if (e != data[0].end())
+								{
+									error_msg += "Username contains illegal characters!<br>";
+									break;
+								}
+							}
+							std::string dir(dir_work);
+							ensure_closing_slash(dir += dir_accounts);
+							auto pos = dir.length();
+							dir += data[0];
+							std::transform(dir.begin() + pos, dir.end(), dir.begin() + pos, ::tolower);
+							Violet::UniBuffer f;
+							auto llfile = dir + USERFILE_LASTLOGIN;
+							if (f.read_from_file(llfile.c_str()))
+							{
+								time_t last_login = f.read<time_t>(), now = time(nullptr);
+								auto d = difftime(now, last_login);
+								if (d <= 10)
+								{
+									error_msg += "Last login attempt on this account took place ";
+									error_msg += std::to_string(static_cast<int64_t>(d));
+									error_msg += " seconds ago. For security reasons, users have to wait at least 10 seconds between consecutive login attempts.";
+									break;
+								}
+								f.clear();
+								f.write<time_t>(now);
+								f.write_to_file(llfile.c_str());
+							}
+							if (!f.read_from_file((dir + USERFILE_ACC).c_str()))
+							{
+								error_msg += e;
+								break;
+							}
+							{
+								Violet::SHA1 sha1;
+								Violet::UniBuffer salt;
+								salt.read_from_file((dir + USERFILE_SALT).c_str());
+								sha1 << data[1];
+								sha1 << salt;
+								const char *pass1 = sha1.result(), *pass2 = reinterpret_cast<char*>(f.data());
+								for (unsigned i = 0; i < 20; ++i)
+									if (*(pass1++) != *(pass2++))
+									{
+										error_msg += e;
+										ok = false;
+										break;
+									}
+							}
+							if (!ok) break;
+							f.set_pos(20);
+							auto stt = f.read_data(f.read<uint16_t>());
+							CreateSession(stt, &f);
+							break;
+						}
+						if (error_msg.length())
+							info.clipboard.emplace_back("session_error", error_msg);
+						if (data.size() > 0) {
+#ifndef WRITE_DATES_ONLY_ON_HEADERS
+							WriteDateToLog();
+#endif
+							if (ss)
+							{
+								log_heap.write(" * User `"sv);
+								log_heap.write(ss->username);
+								log_heap.write("` successfully logged in."sv);
+								printf(" > logon: `%s`\r\n", ss->username.c_str());
+							}
+							else
+							{
+								log_heap.write(" * Failed login attempt! Handle used: "sv);
+								log_heap.write(data[0]);
+							}
+							log_heap.write<uint16_t>(0xa0d);
+						}
+					}
+					break;
+
+				case Curly::tagKillSession:
+					if (ss != nullptr)
+					{
+						std::string name;
+						auto amt = MasterSocket::sessions.size();
+						for (auto it = MasterSocket::sessions.begin(); it != MasterSocket::sessions.end(); ++it)
+							if (&it->second == ss)
+							{
+								name = it->second.username;
+								it = MasterSocket::sessions.erase(it);
+								break;
+							}
+							//else
+								//++it;
+						if (amt > MasterSocket::sessions.size())
+						{
+							char str[64];
+							snprintf(str, 64u, " > Session `%s` closed by user.\r\n", name.c_str());
+#ifndef WRITE_DATES_ONLY_ON_HEADERS
+							WriteDateToLog();
+#endif
+							MasterSocket::log_heap.write_data(str, static_cast<uint32_t>(strlen(str)));
+							printf(str);
+						}
+						ss = nullptr;
+						info.AddHeader("Set-Cookie", SESSION_KILL_CMD);
+					}
+					break;
+
+				case Curly::tagRegister:
+					if (ss == nullptr && dir_accounts)
+					{
+						const size_t count = tag.GetObjCount();
+						std::string error_msg;
+						if (info.method == Hi::Method::Post && tag.GetType() == Curly::modFunction && count > 5 && count <= 6)
+						{
+							bool ok = true;
+							std::vector<std::string> data;
+							data.reserve(count);
+							for (unsigned i = 0; i < count; ++i)
+							{
+								auto p = std::find_if(info.post.begin(), info.post.end(), [str = tag.GetObj(i).str](StringPair &k) { return k.first == str; });
+								if (p == info.post.end())
+									ok = false;
+								else data.emplace_back(p->second);
+							}
+							if (!ok) break;
+							if (!CheckRegistrationData(data, error_msg))
+								ok = false;
+							auto has_quotes = [](char c) { return (c == '\"' || c == '\''); };
+							auto ct = std::remove_if(data[0].begin(), data[0].end(), has_quotes);
+							data[0].erase(ct, data[0].end());
+							ct = std::remove_if(data[3].begin(), data[3].end(), has_quotes);
+							data[3].erase(ct, data[3].end());
+							info.clipboard.emplace_back(tag.GetObj(0).str, data[0]);
+							info.clipboard.emplace_back(tag.GetObj(3).str, data[3]);
+							if (!ok) break;
+							else {
+								std::string dir(dir_work);
+								ensure_closing_slash(dir += dir_accounts);
+								auto pos = dir.length();
+								dir += data[0];
+								std::transform(dir.begin() + pos, dir.end(), dir.begin() + pos, ::tolower);
+								if (DirectoryExists(dir.c_str()))
+								{
+									error_msg += "Username <em>";
+									error_msg += data[0];
+									error_msg += "</em> is already taken.<br>";
+									break;
+								}
+								else
+								{
+									Violet::UniBuffer w;
+									GenerateSalt(w);
+									mkdir(dir.c_str(), 0700);
+									w.write_to_file((dir + USERFILE_SALT).c_str());
+
+									Violet::SHA1 sha1;
+									sha1 << data[1] << w;
+
+									w.clear();
+									w.write_data(sha1.result(), 20u);
+									//w.WriteType<uint16_t>(0xa0d);
+									w.write(static_cast<uint16_t>(data[0].length()));
+									w.write(data[0]);
+									w.write<uint16_t>(0xa0d);
+									w.write<uint8_t>('A');
+									w.write<uint8_t>('0');
+									w.write<uint16_t>(0xa0d);
+									w.write(static_cast<uint16_t>(data[3].length()));
+									w.write(data[3]);
+									w.write<uint16_t>(0xa0d);
+									w.write_to_file((dir + USERFILE_ACC).c_str());
+
+									w.clear();
+									w.write<time_t>( 0x0 );
+									w.write_to_file((dir + USERFILE_LASTLOGIN).c_str());
+
+									info.clipboard.emplace_back("register_msg", "Account `<strong>" + data[0] + "</strong>` has been created.");
+
+									CreateSession(data[0], nullptr);
+
+#ifndef WRITE_DATES_ONLY_ON_HEADERS
+									WriteDateToLog();
+#endif
+									log_heap.write(" * Account `"sv);
+									log_heap.write(data[0]);
+									log_heap.write("` registered."sv);
+									log_heap.write<uint16_t>(0xa0d);
+									printf(" > register: `%s`\r\n", data[0].c_str());
+								}
+							}
+						}
+						if (error_msg.length())
+							info.clipboard.emplace_back("session_error", error_msg);
+					}
+					break;
+
+				case Curly::tagSessionInfo:
+					if (ss != nullptr && tag.GetObjCount() == 1)
+					{
+						if (tag.GetObj(0).str == "name")
+							f.write(ss->username);
+					}
+					break;
+
+				default:
+					f.write<char>('{');
+					f.write<std::string_view>(c);
+					f.write<char>('}');
+				}
+			}
+
+			read_pos = std::min(src.length() + 1, pose);
+		}
+		f.swap(h);
+	}
+}
