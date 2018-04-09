@@ -38,6 +38,7 @@ add_executable(violet
             app_lifetime.cpp
             curly_tags.cpp
             master_socket.cpp
+            captcha_image_generator.cpp
             blog.cpp
             lodepng.cpp)
 

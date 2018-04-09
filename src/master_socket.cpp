@@ -40,8 +40,6 @@ std::vector<StringPair> MasterSocket::content_types;
 
 std::unordered_map<std::string, MasterSocket::Session> MasterSocket::sessions;
 
-std::list<std::pair<MasterSocket::CaptchaImageType, time_t>> MasterSocket::active_captchas;
-
 Violet::UniBuffer MasterSocket::log_heap;
 
 const char
@@ -526,9 +524,6 @@ inline unsigned int ReadUnsignedInt(Violet::Buffer<T> &src, uint8_t bytes = 2)
 	return i += src.template read<uint8_t>();
 }
 
-#include "lodepng.h"
-#include "captcha_image_generator.h"
-
 // returns true if file is confirmed HTML file
 template<class T, class S>
 bool file_search(Violet::Buffer<T> &buff, S && sv, const char * folder)
@@ -663,7 +658,7 @@ void MasterSocket::HandleRequest()
 	}
 	if (!response_ready && received)
 	{
-		Violet::UniBuffer b, f;
+		Violet::UniBuffer b, varf;
 		std::vector<ConstStringPair>::iterator key;
 		const auto get_mark = strfind(info.fetch, '?');
 		std::string_view filename = info.fetch;
@@ -715,23 +710,25 @@ void MasterSocket::HandleRequest()
 		}
 		if (!error) {
 			if (filename.substr(1, 8) == "captcha.") {
-				auto capf = std::find_if(active_captchas.begin(), active_captchas.end(), [sv = filename.substr(9, 15)] (const std::pair<CaptchaImageType, time_t>&c) { return std::string_view{c.first.PicFilename.data(), c.first.PicFilename.size() - 1} == sv; });
-				if (capf != active_captchas.end()) {
-					f = capf->first.Data.get();
-					active_captchas.erase(capf);
+				auto capf = std::find_if(Captcha::Signature::registry.begin(), Captcha::Signature::registry.end(), [sv = filename.substr(9)] (const auto &c) { return std::string_view{c.first.PicFilename.data(), c.first.PicFilename.size() - 1} == sv; });
+				if (capf != Captcha::Signature::registry.end()) {
+					auto ef = capf->first.Data.get();
+					Captcha::Signature::registry.erase(capf);
 					created = true;
+					if (ef.ptr)
+						varf.read_from_mem(ef.ptr, ef.size);
 				}
 				else error = 404;
 			}
-			else if (!(is_html = file_search(f, filename, dir_accessible))) {
-				if (!f.length()) {
+			else if (!(is_html = file_search(varf, filename, dir_accessible))) {
+				if (!varf.length()) {
 					std::string efn { dir_html };
 					efn += "/error.html";
-					f.read_from_file(efn.c_str());
+					varf.read_from_file(efn.c_str());
 					is_html = true;
 					error = 404;
-					if (!f.length())
-						f << "No file found. :(\n"sv;	// one more check just in case there's no error file
+					if (!varf.length())
+						varf << "No file found. :(\n"sv;	// one more check just in case there's no error file
 				}
 				else if (filename.length() > 5
 						&& filename.substr(filename.length() - 5) == ".html")
@@ -776,10 +773,10 @@ void MasterSocket::HandleRequest()
 		info.AddHeader("Connection", "close");
 #endif
 		info.AddHeader("Accept-Ranges", "bytes");
-		if (f.length() > 0 && modified)
+		if (varf.length() > 0 && modified)
 		{
 			if (is_html) {
-				HandleHTML(f, error);
+				HandleHTML(varf, error);
 				info.AddHeader("Content-Type", "text/html");
 			}
 			else {
@@ -794,7 +791,7 @@ void MasterSocket::HandleRequest()
 			if (key != info.raw_headers.end())
 			{
 				size_t beg = 0, en = 0;
-				const size_t s = f.length();
+				const size_t s = varf.length();
 				int amt = sscanf(key->second, "bytes=%zu-%zu", &beg, &en);
 				partial = true;
 				if (amt > 0) {
@@ -804,18 +801,18 @@ void MasterSocket::HandleRequest()
 						en = s - 1;
 					if (beg >= s || en >= s || beg > en) {
 						error = 416;
-						f.clear();
+						varf.clear();
 					}
 					else {
 						snprintf(s_range, 64, "bytes %zu-%zu/%zu", beg, en, s);
 						info.AddHeader("Content-Range", s_range);
-						swap.write_buffer(f, beg, en - beg + 1);
-						f.swap(swap);
+						swap.write_buffer(varf, beg, en - beg + 1);
+						varf.swap(swap);
 					}
 				}
 				else {
 					error = 416;
-					f.clear();
+					varf.clear();
 				}
 			}
 
@@ -856,11 +853,11 @@ void MasterSocket::HandleRequest()
 					if (deflate != encodings.end()) {
 						if (deflate->second > 0.f)
 						{
-							auto swap = Violet::UniBuffer::zlib_compress(f.get_string(), false);
-							if (swap.length() < f.length())
+							auto swap = Violet::UniBuffer::zlib_compress(varf.get_string(), false);
+							if (swap.length() < varf.length())
 							{
 								info.AddHeader("Content-Encoding", "deflate");
-								f.swap(swap);
+								varf.swap(swap);
 							}
 						}
 					}
@@ -869,12 +866,12 @@ void MasterSocket::HandleRequest()
 #endif
 			// TRANSFER LENGTH
 			s_len = new char[32];
-			snprintf(s_len, 32, "%zu", f.length());
+			snprintf(s_len, 32, "%zu", varf.length());
 			info.AddHeader("Content-Length", s_len);
 			info.AddHeader("Last-Modified", is_html || dtm == nullptr ? dt : dtm);
 			/*Data::MD5 md5;
 			md5.Begin();
-			md5.ReadMem(f.GetData(), static_cast<uint32_t>(f.GetLength()));
+			md5.ReadMem(varf.GetData(), static_cast<uint32_t>(varf.GetLength()));
 			md5.End();
 			info.AddHeader("Content-MD5", Data::Buffer::Base64Encode(md5.Result(), 16u));*/
 		}
@@ -923,8 +920,8 @@ void MasterSocket::HandleRequest()
 		if (s_range)
 			delete[]s_range;
 		b.write_crlf();
-		if (f.length() > 0 && modified && info.method != Hi::Method::Head)
-			b << f;
+		if (varf.length() > 0 && modified && info.method != Hi::Method::Head)
+			b << varf;
 		s << b;
 		response_ready = true;
 		sent = false;
@@ -967,9 +964,9 @@ inline bool CheckRegistrationData(std::vector<std::string> &data, std::string &e
 	else
 	{
 			Captcha::Init captcha{ std::move(data[4]) };
-			captcha.Kickstart();
+			captcha.Kickstart(false);
 
-			std::vector<MasterSocket::CaptchaImageType::collectible_type> q(captcha.Imt.Collection.begin(), captcha.Imt.Collection.end());
+			std::vector<Captcha::Signature::collectible_type> q(captcha.Imt.Collection.begin(), captcha.Imt.Collection.end());
 			for (int n = 3; n >= 0; --n)
 				for (unsigned i = 1u; i < q.size(); ++i)
 					if (q[i].first == n)

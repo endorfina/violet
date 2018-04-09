@@ -452,12 +452,12 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 					if (tag.GetType() == Curly::modTrigger)
 					{
 						Captcha::Init c;
-						c.Kickstart();
+						c.Kickstart(true);
 						
 						info.clipboard.emplace_back("captcha_seed", c.seed);
 						info.clipboard.emplace_back("captcha_image", c.Imt.PicFilename.data());
-						c.Imt.Data = std::async(std::launch::async, Captcha::Image::proc, c.Imt.Collection);
-						active_captchas.emplace_back(std::move(c.Imt), time(nullptr));
+						c.Imt.Data = std::async(std::launch::async, Captcha::Image::process, c.Imt.Collection);
+						Captcha::Signature::registry.emplace_back(std::move(c.Imt), time(nullptr));
 					}
 					break;
 

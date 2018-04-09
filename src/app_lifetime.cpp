@@ -159,7 +159,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 		if (++tick > 500)
 		{
 			tick = 0;
-			if (auto amt = MasterSocket::sessions.size(); amt > 0 || MasterSocket::active_captchas.size())
+			if (auto amt = MasterSocket::sessions.size(); amt > 0 || Captcha::Signature::registry.size())
 			{
 				now = time(nullptr);
 				for (auto it = MasterSocket::sessions.begin(); it != MasterSocket::sessions.end();)
@@ -174,9 +174,9 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 					MasterSocket::log_heap.write<std::string_view>(str);
 					printf(str);
 				}
-				for (auto it = MasterSocket::active_captchas.begin(); it != MasterSocket::active_captchas.end();)
+				for (auto it = Captcha::Signature::registry.begin(); it != Captcha::Signature::registry.end();)
 					if (now - it->second > 20)
-						it = MasterSocket::active_captchas.erase(it);
+						it = Captcha::Signature::registry.erase(it);
 					else
 						++it;
 			}

@@ -18,7 +18,8 @@
 */
 
 #pragma once
-#include "tcp.hpp"
+#include "echo/tcp.hpp"
+#include "captcha_image_generator.hpp"
 #include "blog.h"
 
 #ifdef _DEBUG
@@ -66,13 +67,6 @@ struct MasterSocket {
 		Session(const std::string &name);
 
 		~Session(void);
-	};
-	
-	struct CaptchaImageType {
-		typedef std::pair<uint8_t, uint8_t> collectible_type;
-		std::array<collectible_type, 4> Collection;
-		std::array<char, 24> PicFilename;
-		std::future<Violet::UniBuffer> Data;
 	};
 
 	struct Hi {
@@ -170,8 +164,6 @@ struct MasterSocket {
 	static std::unordered_map<std::string, Session> sessions;
 	
 	static std::list<Blog> active_blogs;
-	
-	static std::list<std::pair<CaptchaImageType, time_t>> active_captchas;
 
 	static const char *dir_html, *dir_log;
 
