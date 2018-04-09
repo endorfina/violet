@@ -293,13 +293,16 @@ namespace Captcha
 				g(col[3].first),
 				static_cast<char>(col[3].second + '0')
 				};
-			unsigned i = 0;
-			for (auto &it : data)
-				it = i++ % 4 == 3 ? rand() % 165 + 10 : rand() % 230 + 26;
-			// for (int y = 0; y < height; ++y)
-			// 	for (int x = 0; x < width; ++x)
-			// 		if(auto d = std::min({abs(x), abs(y), abs(y - height), abs(x - height)}); d < 5)
-			// 			data[4 * (y * width + x) + 3] *= static_cast<float>(d + 1) / 6.2f;
+			std::random_device dev;
+			std::mt19937 mt{dev()};
+			{
+				unsigned i = 0;
+				std::uniform_int_distribution<unsigned short int> alpha{10, 175}, noise{26, 255};
+				for (auto &it : data)
+					it = i++ % 4 == 3 ? alpha(mt) : noise(mt);
+			}
+			std::uniform_int_distribution<unsigned short int> final_noise{6, 10};
+
 			for (unsigned n = 0; n < 7; ++n)
 				if (auto ff = glyphs.find(chrs[n]); ff != glyphs.end()) {
 					const auto &fig = ff->second;
@@ -316,7 +319,7 @@ namespace Captcha
 									while((b -= 2) > 0);
 							}
 							if (d < .015f) // .04
-								data[4 * (y * width + n * partwidth + x) + 3] = static_cast<uint8_t>((.16f - sqrtf(d)) * (25.5f / .16f)) * (rand() % 5 + 6);
+								data[4 * (y * width + n * partwidth + x) + 3] = static_cast<uint8_t>((.16f - sqrtf(d)) * (25.5f / .16f)) * final_noise(mt);
 						}
 				}
 		}

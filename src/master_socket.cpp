@@ -1070,14 +1070,23 @@ void MasterSocket::CreateSession(std::string_view name, Violet::UniBuffer *loade
 	}
 	else
 	{
-		char data[17];
-		for (int i = 0; i < 16; ++i)
-			data[i] = rand() % 2 ? rand() % 10 + 0x30 : rand() % 59 + 64; /// %('z' - '@' + 1) + 64 // 'A' = 65
-		data[16] = 0;
+		char rdata[31];
+		{
+			std::random_device dev;
+			std::minstd_rand mr{dev()};
+			std::uniform_int_distribution<short int> sw{0, 2}, lc{'a', 'z'}, uc{'A', 'Z'}, di{'0', '9'};
+			for (int i = 0; i < 30; ++i)
+				switch(sw(mr)) {
+					case 0: rdata[i] = lc(mr); break;
+					case 1: rdata[i] = uc(mr); break;
+					default: rdata[i] = di(mr); break;
+				}
+		}
+		rdata[30] = 0x0;
 		for (auto c : name)
 			if (IsUsernameAcceptable(c))
 				cookie += c;
-		cookie += data;
+		cookie += rdata;
 		auto ssid = sessions.emplace(cookie, std::string(name.data(), name.size()));
 		ss = &(ssid.first->second);
 
