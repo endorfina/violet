@@ -93,17 +93,11 @@ struct MasterSocket {
 
 		void Clear();
 
-		inline void AddHeader(const char *s1, const char *s2) {
-			content_headers.emplace(s1, s2);
-		}
+		inline void AddHeader(const char *s1, const char *s2) { content_headers.emplace(s1, s2); }
 
-		inline const char * GetTableAtPos() const {
-			return table.data() + table.get_pos();
-		}
+		inline const char * GetTableAtPos() const { return table.data() + table.get_pos(); }
 
-		inline size_t GetRemainingTable() const {
-			return table.length() - table.get_pos();
-		}
+		inline size_t GetRemainingTable() const { return table.length() - table.get_pos(); }
 
 		template<class S>
 		inline map_t &list(const S & _name) {
@@ -146,10 +140,12 @@ struct MasterSocket {
 
 	void HandleRequest();
 
+private:
 	void HandleHTML(Violet::UniBuffer &file, uint16_t error);
 
 	void CreateSession(std::string_view name, Violet::UniBuffer *loaded_file);
-	
+
+public:
 	
 		////   GLOBALS   ////
 
