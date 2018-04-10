@@ -45,6 +45,7 @@ void Captcha::Init::Kickstart(bool gen_filename) {
 
 	if (gen_filename) {
 		std::uniform_int_distribution<int> d3(0, 61);
+		Imt.PicFilename.reserve(36);
 		Imt.PicFilename.resize(32);
 		for (auto &it : Imt.PicFilename)
 			it = random_char(d3(rdev));

@@ -87,29 +87,28 @@ void ConsoleHandlerRoutine(int sig)
 	std::exit(EXIT_SUCCESS);
 }
 
-void ComposeMIMEs(std::vector<StringPair> & ct, const char * fn) {
+template<class Map>
+void ComposeMIMEs(Map & ct, const char * fn) {
 	Violet::UniBuffer f;
 	f.read_from_file(fn);
+	std::string keyword;
 	while (!f.is_at_end()) {
 		size_t p1 = f.get_pos(), p2, len = f.length();
 		char * c = reinterpret_cast<char*>(f.data());
 		for (p2 = p1; p2 < len; ++p2)
 			if (c[p2] == 0x20 || c[p2] == 0x0d)
 				break;
-		std::string s(c + p1, c + p2);
-		if (c[p2] == 0x20)
-		{
-			ct.emplace_back();
-			ct.back().first = std::move(s);
+		std::string s{ c + p1, c + p2 };
+		if (c[p2] == 0x20) {
+			keyword = std::move(s);
 			f.set_pos(p2 + 1);
 		}
-		else
-		{
-			ct.back().second = std::move(s);
+		else {
+			ct.emplace(std::move(keyword), std::move(s));
 			f.set_pos(p2 + 2);
 		}
 	}
-	ct.shrink_to_fit();
+	//ct.shrink_to_fit();
 }
 
 void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l, SSL_CTX * const ctx) {
@@ -170,9 +169,10 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 				if (amt > MasterSocket::sessions.size())
 				{
 					char str[64];
-					snprintf(str, 64, " > %zu unused session(s) have been closed.\n", amt - MasterSocket::sessions.size());
-					MasterSocket::log_heap.write<std::string_view>(str);
-					printf(str);
+					snprintf(str, 64, " > %zu unused session(s) have been closed.", amt - MasterSocket::sessions.size());
+					puts(str);
+					std::lock_guard<std::mutex> lock(MasterSocket::logging.first);
+					MasterSocket::logging.second << str << '\n';
 				}
 				for (auto it = Captcha::Signature::registry.begin(); it != Captcha::Signature::registry.end();)
 					if (now - it->second > 20)

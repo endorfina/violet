@@ -19,6 +19,7 @@
 
 #pragma once
 #include "echo/tcp.hpp"
+#include "error.hpp"
 #include "captcha_image_generator.hpp"
 #include "blog.h"
 
@@ -32,23 +33,9 @@
 
 inline void GetTimeGMT(char * dest, size_t buffSize, const char *_format, bool localTime = false);
 
-//std::string ReadUntilSpace(Violet::Buffer &src, const char trim_char = 0);
-
 std::string ReadAlphanumeric(const std::string &src, size_t pos = 0, bool include_underscore = false);
 
 std::string ReadUntilSpace(const std::string &src, size_t pos = 0, const char trim_char = 0);
-
-//std::string ReadUntilNewLine(Violet::Buffer &src);
-
-
-// inline std::string str_convert(std::string_view str) {
-//     if constexpr (std::is_convertible<std::string_view, std::string>::value) {
-//         return std::string(str);
-//     }
-//     else {
-//         return std::string(str.data(), str.size());
-//     }
-// }
 
 
 struct MasterSocket {
@@ -70,15 +57,17 @@ struct MasterSocket {
 	};
 
 	struct Hi {
-		std::vector<ConstStringPair> raw_headers, content_headers;
+		using headers_t = std::unordered_map<const char *, const char *, std::hash<const char *>, Violet::cis_functor_equal_comparator>;
+		headers_t raw_headers, content_headers;
 		bool keepalive = false;
 		const char * fetch = nullptr;//, table;
 
-		enum Method { Get, Head, Post, Put, Delete, Trace, Options, Error };
+		enum class Method { Get, Head, Post, Put, Delete, Trace, Options, Error };
 
 		Method method = Method::Error;
 
-		std::vector<StringPair> get, post, cookie, clipboard;
+		using map_t = std::map<std::string, std::string, Violet::functor_less_comparator>;
+		map_t get, post, cookie, clipboard;
 
 		struct _F {
 			std::string name, filename, mime_type;
@@ -90,15 +79,6 @@ struct MasterSocket {
 		
 	protected:
 		Violet::UniBuffer table;
-
-	private:
-		static size_t ReadUntilPOSTDemiliter(const char * const data, size_t pos, const size_t len, StringPair &p);
-
-		static unsigned int ReadUntilCookieDemiliter(const char * const data, unsigned int pos, const size_t len, StringPair &p);
-
-		static unsigned int ReadUntilPOSTContentDispositionDelimiter(const char * const data, unsigned int pos, const size_t len, StringPair &p);
-
-		static size_t ParsePOSTContentDisposition(std::string &src, std::vector<StringPair> &dest);
 
 	public:
 		size_t BuildFromBuffer(Violet::UniBuffer &&src);
@@ -113,17 +93,31 @@ struct MasterSocket {
 
 		void Clear();
 
-		std::vector<StringPair> * FetchList(const std::string_view &f);
+		inline void AddHeader(const char *s1, const char *s2) {
+			content_headers.emplace(s1, s2);
+		}
 
-		inline void AddHeader(const char *s1, const char *s2);
-		
-		inline const char * GetTableAtPos();
-		
-		inline size_t GetRemainingTable();
+		inline const char * GetTableAtPos() const {
+			return table.data() + table.get_pos();
+		}
 
-		//inline void AddHeader(const char *s1, std::string &&s2);
+		inline size_t GetRemainingTable() const {
+			return table.length() - table.get_pos();
+		}
 
-		//inline void AddHeader(const char *s1, std::string &s2);
+		template<class S>
+		inline map_t &list(const S & _name) {
+			using namespace std::string_view_literals;
+			if (_name == "post"sv)
+				return post;
+			else if (_name == "get"sv)
+				return get;
+			else if (_name == "cookie"sv)
+				return cookie;
+			else if (_name == "clipboard"sv || _name == "cb"sv)
+				return clipboard;
+			throw violet_exception::wrong_enum;
+		}
 	};
 
 	Violet::Socket<std::vector<char>> s;
@@ -159,7 +153,7 @@ struct MasterSocket {
 	
 		////   GLOBALS   ////
 
-	static std::vector<StringPair> content_types;
+	static std::map<std::string, std::string, Violet::functor_less_comparator> content_types;
 
 	static std::unordered_map<std::string, Session> sessions;
 	
@@ -169,7 +163,7 @@ struct MasterSocket {
 
 	static std::string dir_work;
 
-	static Violet::UniBuffer log_heap;
+	static std::pair<std::mutex, Violet::UniBuffer> logging;
 
 	static void WriteDateToLog();
 

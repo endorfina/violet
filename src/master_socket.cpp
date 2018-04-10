@@ -36,11 +36,11 @@
 
 #define ___KEEP_ALIVE_CONNECTION
 
-std::vector<StringPair> MasterSocket::content_types;
+std::map<std::string, std::string, Violet::functor_less_comparator> MasterSocket::content_types;
 
 std::unordered_map<std::string, MasterSocket::Session> MasterSocket::sessions;
 
-Violet::UniBuffer MasterSocket::log_heap;
+std::pair<std::mutex, Violet::UniBuffer> MasterSocket::logging;
 
 const char
 * MasterSocket::dir_html = "html",
@@ -152,8 +152,10 @@ inline bool EndOfHeader(B&&src)
 	return (*data == 0xd && *(data + 1) == 0xa);
 }
 
-size_t MasterSocket::Hi::ReadUntilPOSTDemiliter(const char * const data, size_t pos, const size_t len, StringPair &p)
+template<typename _Pos>
+std::pair<std::string, std::string> __parse_until_post_delimiter(const char * const data, _Pos& pos, const size_t len)
 {
+	std::pair<std::string, std::string> p;
 	auto i = pos;
 	for (; i < len; ++i) {
 		if (data[i] == '=' || data[i] == '&')
@@ -176,11 +178,13 @@ size_t MasterSocket::Hi::ReadUntilPOSTDemiliter(const char * const data, size_t 
 		p.second = url_decode(p.second);
 		pos = i + 1;
 	}
-	return pos;
+	return p;
 }
 
-unsigned int MasterSocket::Hi::ReadUntilCookieDemiliter(const char * const data, unsigned int pos, const size_t len, StringPair &p)
+template<typename _Pos>
+std::pair<std::string, std::string> __parse_until_cookie_delimiter(const char * const data, _Pos& pos, const size_t len)
 {
+	std::pair<std::string, std::string> p;
 	auto i = pos;
 	for (; i < len; ++i)
 		if (data[i] < '!' || data[i] > '~' || data[i] == 0x20 || data[i] == ',' || data[i] == ';')
@@ -205,11 +209,13 @@ unsigned int MasterSocket::Hi::ReadUntilCookieDemiliter(const char * const data,
 		p.second.assign(data + pos, i - pos);
 		pos = i + 1;
 	}
-	return pos;
+	return p;
 }
 
-unsigned int MasterSocket::Hi::ReadUntilPOSTContentDispositionDelimiter(const char * const data, unsigned int pos, const size_t len, StringPair & p)
+template<typename _Pos>
+std::pair<std::string, std::string> __parse_until_POST_disposition_delimiter(const char * const data, _Pos &pos, const size_t len)
 {
+	std::pair<std::string, std::string> p;
 	size_t i;
 	for (i = pos; i < len; ++i)
 		if (data[i] < '!' || data[i] > '~' || data[i] == 0x20 || data[i] == ',' || data[i] == ';')
@@ -243,7 +249,19 @@ unsigned int MasterSocket::Hi::ReadUntilPOSTContentDispositionDelimiter(const ch
 			pos = i + 1;
 		}
 	}
-	return pos;
+	return p;
+}
+
+template<class Str, class Map>
+void parse_post_content(const Str & src, Map& dest)
+{
+	size_t pos = 0;
+	const auto len = src.length();
+	do {
+		auto p = __parse_until_POST_disposition_delimiter(src.data(), pos, len);
+		if (!!p.first.size())
+			dest.emplace(std::move(p));
+	} while (pos < len);
 }
 
 size_t MasterSocket::Hi::BuildFromBuffer(Violet::UniBuffer &&src)
@@ -273,16 +291,16 @@ size_t MasterSocket::Hi::BuildFromBuffer(Violet::UniBuffer &&src)
 
 	if (method != Method::Error)
 	{
-		log_heap.write<std::string_view>(str);
-		log_heap.write<char>(0x20);
 		for (; i < len && str[i] <= 0x20; ++i);
 		fetch = str + i;
 		for (; i < len && str[i] > 0x20; ++i);
 		str[i++] = 0;
-		log_heap.write<std::string_view>(fetch);
-		log_heap.write<char>(0x20);
 		if (i + 8 >= len)
 			return 0;
+		else {
+			std::lock_guard<std::mutex> lock(logging.first);
+			logging.second << str << ' ' << fetch << ' ';
+		}
 		
 		for (; i < len && str[i] <= 0x20; ++i);
 		const auto protocol = str + i;
@@ -307,22 +325,21 @@ size_t MasterSocket::Hi::BuildFromBuffer(Violet::UniBuffer &&src)
 					return 0;
 				str[i] = 0;
 				i += 2;
-				raw_headers.emplace_back(std::make_pair(s1, s2));
+				raw_headers.emplace(std::make_pair(s1, s2));
 				if (str[i] == 0xd && str[i + 1] == 0xa) {
 					*reinterpret_cast<uint16_t*>(str + i) = 0x0;
 					table.set_pos(i + 2);
 					
-					if (method == Method::Post) {
+					if (method == Method::Post)
 						puts(str + i + 2);
-					}
 					break;
 				}
 			} while (i < len);
 		}
 	}
-	else
-	{
-		log_heap.write("Unknown Method "sv);
+	else {
+		std::lock_guard<std::mutex> lock(logging.first);
+		logging.second << "Unknown Method "sv;
 	}
 	return raw_headers.size();
 }
@@ -332,8 +349,8 @@ size_t MasterSocket::Hi::ParsePOST(const char * data, const size_t len)
 	size_t pos = 0;
 	if (data[0] == 0xd && data[1] == 0xa)
 		data += 2;
-	auto r = std::find_if(raw_headers.begin(), raw_headers.end(), [](ConstStringPair &p) { std::string data(p.first); std::transform(data.begin(), data.end(), data.begin(), ::tolower); return data == "content-type"; });
-	if (r != raw_headers.end())
+
+	if (auto r = raw_headers.find("content-type"); r != raw_headers.end())
 	{
 		const std::string_view type2{ r->second };
 		bool is_multipart = type2.substr(0, strlen("multipart/form-data")) == "multipart/form-data";
@@ -363,7 +380,7 @@ size_t MasterSocket::Hi::ParsePOST(const char * data, const size_t len)
 				instance.write_data(content.c_str() + pos, pfe - pos);
 				pos = pfe + boundary.length();
 				pf = 0u;
-				std::vector<StringPair> headers;
+				std::map<std::string_view, std::string_view, Violet::cis_functor_less_comparator> headers;
 				do {
 					auto s1 = instance.get_string_current();
 					s1 = s1.substr(0, s1.find(':'));
@@ -378,25 +395,23 @@ size_t MasterSocket::Hi::ParsePOST(const char * data, const size_t len)
 						s1.remove_suffix(1);
 					while (s2.size() && !!std::isspace(static_cast<unsigned char>(s2.front())))
 						s1.remove_prefix(1);
-					headers.emplace_back(static_cast<std::string&&>(s1), static_cast<std::string&&>(s2));
-					if (EndOfHeader(instance))
-					{
+					headers.emplace(std::make_pair(s1,s2));
+					if (EndOfHeader(instance)) {
 						instance.read<uint16_t>();
 						break;
 					}
 				} while (!instance.is_at_end());
-				auto r = std::find_if(headers.begin(), headers.end(), [](StringPair &p) { return cik_strcmp(p.first.c_str(), "content-disposition"); });
-				if (r != headers.end())
+				
+				if (auto r = headers.find("content-disposition"); r != headers.end())
 				{
-					std::vector<StringPair> disposition;
-					ParsePOSTContentDisposition(r->second, disposition);
-					auto name = std::find_if(disposition.begin(), disposition.end(), [](StringPair &p) { return p.first == "name";});
+					std::unordered_map<std::string, std::string> disposition;
+					parse_post_content(r->second, disposition);
+					auto name = disposition.find("name");
 					if (name == disposition.end())
 						break;
-					r = std::find_if(headers.begin(), headers.end(), [](StringPair &p) { return cik_strcmp(p.first.c_str(), "content-type"); });
-					auto rfn = std::find_if(disposition.begin(), disposition.end(), [](StringPair &p) { return p.first == "filename";});
+					r = headers.find("content-type");
 					auto isv = instance.get_string_current();
-					if (r != headers.end() || rfn != disposition.end())
+					if (auto rfn = disposition.find("filename"); r != headers.end() || rfn != disposition.end())
 					{
 						_F newfile;
 						newfile.name.assign(name->second);
@@ -410,24 +425,18 @@ size_t MasterSocket::Hi::ParsePOST(const char * data, const size_t len)
 						if (newfile.name.size() > 0)
 							file.emplace_back(newfile);
 					}
-					else
-					{
-						StringPair p;
-						p.first = name->second;
+					else {
 						isv.remove_suffix(2);
-						p.second.assign(static_cast<std::string>(isv));
-						if (p.first.size() > 0)
-							post.emplace_back(p);
+						if (!!name->second.size())
+							post[name->second] = static_cast<std::string>(isv);
 					}
 				}
 			}
 		}
-		else do
-		{
-			StringPair p;
-			pos = ReadUntilPOSTDemiliter(data, pos, len, p);
+		else do {
+			auto p = __parse_until_post_delimiter(data, pos, len);
 			if (p.first.size() > 0)
-				post.emplace_back(p);
+				post.emplace(std::move(p));
 		} while (pos < len);
 		return post.size();
 	}
@@ -437,12 +446,10 @@ size_t MasterSocket::Hi::ParsePOST(const char * data, const size_t len)
 size_t MasterSocket::Hi::ParseGET(const char *src, size_t offset)
 {
 	const auto len = strlen(src);
-	while (offset < len)
-	{
-		StringPair p;
-		offset = ReadUntilPOSTDemiliter(src, static_cast<uint32_t>(offset), len, p);
+	while (offset < len) {
+		auto p = __parse_until_post_delimiter(src, offset, len);
 		if (p.first.size() > 0)
-			get.emplace_back(p);
+			get.emplace(std::move(p));
 	}
 	return get.size();
 }
@@ -453,25 +460,11 @@ size_t MasterSocket::Hi::ParseCookies(const char *src)
 	const auto len = strlen(src);
 	do
 	{
-		StringPair p;
-		pos = ReadUntilCookieDemiliter(src, pos, len, p);
+		auto p = __parse_until_cookie_delimiter(src, pos, len);
 		if (p.first.size() > 0)
-			cookie.emplace_back(p);
+			cookie.emplace(std::move(p));
 	} while (pos < len);
 	return cookie.size();
-}
-size_t MasterSocket::Hi::ParsePOSTContentDisposition(std::string & src, std::vector<StringPair>& dest)
-{
-	unsigned int pos = 0;
-	auto len = src.length();
-	do
-	{
-		StringPair p;
-		pos = ReadUntilPOSTContentDispositionDelimiter(src.c_str(), pos, len, p);
-		if (p.first.size() > 0)
-			dest.emplace_back(p);
-	} while (pos < len);
-	return dest.size();
 }
 
 void MasterSocket::Hi::Print()
@@ -491,29 +484,7 @@ void MasterSocket::Hi::Print()
 #endif
 }
 
-std::vector<StringPair> * MasterSocket::Hi::FetchList(const std::string_view &fn) {
-	if (fn == "post")
-		return &post;
-	else if (fn == "get")
-		return &get;
-	else if (fn == "cookie")
-		return &cookie;
-	else if (fn == "clipboard" || fn == "cb")
-		return &clipboard;
-	return nullptr;
-}
 
-inline void MasterSocket::Hi::AddHeader(const char *s1, const char *s2) {
-	content_headers.emplace_back(s1, s2);
-}
-
-inline const char * MasterSocket::Hi::GetTableAtPos() {
-	return table.data() + table.get_pos();
-}
-
-inline size_t MasterSocket::Hi::GetRemainingTable() {
-	return table.length() - table.get_pos();
-}
 
 template<class T>
 inline unsigned int ReadUnsignedInt(Violet::Buffer<T> &src, uint8_t bytes = 2)
@@ -546,7 +517,7 @@ bool file_search(Violet::Buffer<T> &buff, S && sv, const char * folder)
 	return false;
 }
 
-#include <iostream>
+//#include <iostream> just for testing
 
 void MasterSocket::HandleRequest()
 {
@@ -564,12 +535,12 @@ void MasterSocket::HandleRequest()
 				//printf("> Received %zu bytes [id:%lu]\n%s\n", b.GetLength(), id, b.ToString());
 				if (info.BuildFromBuffer(std::move(b)))
 				{
-					auto r = std::find_if(info.raw_headers.begin(), info.raw_headers.end(), [](ConstStringPair &p) { return strcmp(p.first, "Cookie") == 0; });
+					auto r = info.raw_headers.find("Cookie");
 					if (r != info.raw_headers.end())
 					{
 						info.ParseCookies(r->second);
-						auto r2 = std::find_if(info.cookie.begin(), info.cookie.end(), [](StringPair &p) { return p.first == "SSID"; });
-						if (r2 != info.cookie.end())
+						
+						if (auto r2 = info.cookie.find("SSID"); r2 != info.cookie.end())
 						{
 							auto ssid = sessions.find(r2->second);
 							if (ssid != sessions.end())
@@ -582,7 +553,7 @@ void MasterSocket::HandleRequest()
 					}
 					if (info.method == Hi::Method::Post)
 					{
-						r = std::find_if(info.raw_headers.begin(), info.raw_headers.end(), [](ConstStringPair &p) { return cik_strcmp(p.first, "content-length"); });
+						r = info.raw_headers.find("content-length");
 						if (r != info.raw_headers.end() && sscanf(r->second, "%zu", &body_length) == 1) {
 							if (body_length > info.GetRemainingTable()) {
 								received_body = false;
@@ -591,28 +562,27 @@ void MasterSocket::HandleRequest()
 							else info.ParsePOST(info.GetTableAtPos(), body_length);
 						}
 					}
-					log_heap.write("Host: \""sv);
-					r = std::find_if(info.raw_headers.begin(), info.raw_headers.end(), [](ConstStringPair &p) { return strcmp(p.first, "Host") == 0; });
-					if (r != info.raw_headers.end())
-						log_heap.write<std::string_view>(r->second);
-					log_heap.write<uint8_t>('\"');
+					r = info.raw_headers.find("Host");
+					if (r != info.raw_headers.end()) {
+						std::lock_guard<std::mutex> lock(logging.first);
+						logging.second << "Host: \""sv << r->second << '\"';
+					}
 					sent = response_ready = false;
 					//printf("> Packet [id:%lu, addr:%s]\n", id, info.fetch.c_str());
 				}
 				else
 				{
-					log_heap.write("<BAD REQUEST>?"sv);
 					response_ready = true;
 					sent = true;
+					std::lock_guard<std::mutex> lock(logging.first);
+					logging.second << "<BAD REQUEST>?"sv;
 				}
 				std::string ip{ s.get_peer_address() };
-				if (ip != "127.0.0.1") {
-					log_heap.write<uint8_t>(0x20);
-					log_heap.write<std::string_view>(ip);
-					log_heap.write<char>(';');
-				}
-				log_heap.write<uint16_t>(0xa0d);
-				if (log_heap.length() > MAX_HEAP_SIZE)
+				std::lock_guard<std::mutex> lock(logging.first);
+				if (ip != "127.0.0.1")
+					logging.second << ' ' << ip << ';';
+				logging.second.write<uint16_t>(0xa0d);
+				if (logging.second.length() > MAX_HEAP_SIZE)
 					SaveLogHeapBuffer();
 				received = true;
 #ifdef MONITOR_SOCKETS
@@ -661,7 +631,7 @@ void MasterSocket::HandleRequest()
 	if (!response_ready && received)
 	{
 		Violet::UniBuffer b, varf;
-		std::vector<ConstStringPair>::iterator key;
+		Hi::headers_t::iterator key;
 		const auto get_mark = strfind(info.fetch, '?');
 		std::string_view filename = info.fetch;
 		if (get_mark != std::string::npos) {
@@ -750,7 +720,7 @@ void MasterSocket::HandleRequest()
 			gmt = *gmtime(&(attrib.st_ctime));
 			dtm = new char[64];
 			strftime(dtm, 64, dtformat, &gmt);
-			key = std::find_if(info.raw_headers.begin(), info.raw_headers.end(), [](ConstStringPair &s) { return cik_strcmp(s.first, "if-modified-since"); });
+			key = info.raw_headers.find("if-modified-since");
 			if (key != info.raw_headers.end())
 			{
 				tm modt;
@@ -763,8 +733,8 @@ void MasterSocket::HandleRequest()
 		info.AddHeader("Date", dt);
 		info.AddHeader("Server", VIOLET_CUSTOM_USER_AGENT);
 #ifdef ___KEEP_ALIVE_CONNECTION
-		key = std::find_if(info.raw_headers.begin(), info.raw_headers.end(), [](ConstStringPair &p) { if (strcmp(p.first, "Connection") == 0) { return cik_strcmp(p.second, "keep-alive"); } return false; });
-		if (key == info.raw_headers.end())
+		key = info.raw_headers.find("Connection");
+		if (key == info.raw_headers.end() || Violet::__cis_compare(key->second, "keep-alive") != 0)
 			info.AddHeader("Connection", "close");
 		else
 		{
@@ -785,11 +755,11 @@ void MasterSocket::HandleRequest()
 				std::string_view ext;
 				if (auto last_period = filename.find_last_of('.'); last_period != std::string::npos)
 					ext = filename.substr(last_period);
-				const auto skey = std::find_if(MasterSocket::content_types.begin(), MasterSocket::content_types.end(), [&](StringPair &k) { return k.first == ext; });
+				const auto skey = MasterSocket::content_types.find(ext);
 				info.AddHeader("Content-Type", skey != MasterSocket::content_types.end() ? skey->second.c_str() : "text/plain");
 			}
 			// RANGE
-			key = std::find_if(info.raw_headers.begin(), info.raw_headers.end(), [](ConstStringPair &s) { return strcmp(s.first, "Range") == 0; });
+			key = info.raw_headers.find("range");
 			if (key != info.raw_headers.end())
 			{
 				size_t beg = 0, en = 0;
@@ -820,10 +790,10 @@ void MasterSocket::HandleRequest()
 
 #ifdef USE_PACKET_COMPRESSION
 			// CONTENT ENCODING
-			key = std::find_if(info.raw_headers.begin(), info.raw_headers.end(), [](ConstStringPair &s) { return cik_strcmp(s.first,"accept-encoding"); });
+			key = info.raw_headers.find("accept-encoding");
 			if (key != info.raw_headers.end())
 			{
-				std::vector<std::pair<std::string, float>> encodings;
+				std::map<std::string, float> encodings;
 				size_t p1 = 0u, p2 = 0u;
 				const size_t len = strlen(key->second);
 				if (len > 0) {
@@ -832,12 +802,13 @@ void MasterSocket::HandleRequest()
 						while (func1(key->second[p2]) && p2 < len)
 							++p2;
 						if (p1 < p2) {
-							encodings.emplace_back(std::string(key->second + p1, p2 - p1), 1.f);
+							float &enc_val = encodings[std::string{key->second + p1, p2 - p1}];
+							enc_val = 1.f;
 							while (key->second[p2] == 0x20)
 								++p2;
 							if (key->second[p2] == ';')
 							{
-								sscanf(key->second + ++p2, "q=%f", &(encodings.back().second));
+								sscanf(key->second + ++p2, "q=%f", &enc_val);
 								while (key->second[p2] != ',' && p2 < len)
 									++p2;
 								++p2;
@@ -849,9 +820,7 @@ void MasterSocket::HandleRequest()
 						}
 						else break;
 					}
-					auto deflate = std::find_if(encodings.begin(), encodings.end(), [](std::pair<std::string, float> &p) { return p.first == "deflate"; });
-//					if (deflate == encodings.end())
-//						std::find_if(encodings.begin(), encodings.end(), [](std::pair<std::string, float> &p) { return p.first == "*"; });
+					auto deflate = encodings.find("deflate");
 					if (deflate != encodings.end()) {
 						if (deflate->second > 0.f)
 						{
@@ -1007,8 +976,7 @@ inline bool CheckRegistrationData(std::vector<std::string> &data, std::string &e
 	}
 	else
 	{
-		auto e = std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !IsUsernameAcceptable(c); });
-		if (e != data[0].end())
+		if (std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !IsUsernameAcceptable(c); }) != data[0].end())
 		{
 			error_msg += "Username can only contain letters, digits and an underscore.<br>";
 			return false;
@@ -1125,20 +1093,21 @@ void MasterSocket::WriteDateToLog()
 {
 	char dt[50];
 	GetTimeGMT(dt, sizeof(dt), "[%j %T]: ");
-	log_heap.write_data(dt, static_cast<uint32_t>(strlen(dt)));
+	std::lock_guard<std::mutex> lock(logging.first);
+	logging.second << dt;
 }
 
 void MasterSocket::SaveLogHeapBuffer()
 {
-	if (log_heap.length() > 0)
+	if (logging.second.length() > 0)
 	{
 		char dt[32];
 		std::string fn(dir_log);
 		fn += "/activity.";
 		GetTimeGMT(dt, sizeof(dt), "%yw%j.txt");
 		fn += dt;
-		log_heap.append_to_file(fn.c_str());
-		log_heap.clear();
+		logging.second.append_to_file(fn.c_str());
+		logging.second.clear();
 	}
 }
 

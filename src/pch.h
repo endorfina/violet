@@ -44,6 +44,7 @@
 #include <string_view>
 #include <optional>
 #include <random>
+#include <mutex>
 
 #include <sys/stat.h>
 

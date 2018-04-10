@@ -41,15 +41,66 @@ namespace Violet
 	}
 
 	template<class S>
-	void skip_whitespaces(S&&s, size_t &it) {
+	constexpr void skip_whitespaces(S&&s, size_t &it) {
 		for (; it < s.size() && !!s[it] && !!std::isspace(static_cast<unsigned char>(s[it])); ++it);
 	}
 
 	template<class S>
-	void skip_whitespaces(S &it, const S end) {
+	constexpr void skip_whitespaces(S &it, const S end) {
 		while(it != end && *it <= 0x20)
 			++it;
 	}
+
+	constexpr int __cis_compare(const std::string_view &lhs, const std::string_view &rhs) {
+		const auto __s = std::min(lhs.size(), rhs.size());
+		int __ret = 0;
+		for (std::remove_const_t<decltype(__s)> i = 0; i < __s; ++i)
+			if (::tolower(lhs[i]) < ::tolower(rhs[i])) {
+				__ret = -1;
+				break;
+			}
+			else if (::tolower(lhs[i]) > ::tolower(rhs[i])) {
+				__ret = 1;
+				break;
+			}
+		if (__ret == 0)
+			if (lhs.size() < rhs.size())
+			__ret = -1;
+			else if (lhs.size() > rhs.size())
+			__ret = 1;
+		return __ret;
+	}
+
+	struct functor_less_comparator {
+		bool operator()(const std::string &lhs, const std::string &rhs) const {
+			return lhs < rhs;
+		}
+		bool operator()(const std::string_view &lhs, const std::string_view &rhs) const {
+			return lhs < rhs;
+		}
+		using is_transparent = void;
+	};
+	struct functor_equal_comparator {
+		bool operator()(const std::string &lhs, const std::string &rhs) const {
+			return lhs == rhs;
+		}
+		bool operator()(const std::string_view &lhs, const std::string_view &rhs) const {
+			return lhs == rhs;
+		}
+		using is_transparent = void;
+	};
+	struct cis_functor_equal_comparator {
+		bool operator()(std::string_view lhs, std::string_view rhs) const {
+			return __cis_compare(lhs, rhs) == 0;
+		}
+		using is_transparent = void;
+	};
+	struct cis_functor_less_comparator {
+		bool operator()(std::string_view lhs, std::string_view rhs) const {
+			return __cis_compare(lhs, rhs) < 0;
+		}
+		using is_transparent = void;
+	};
 
 	namespace internal
 	{
@@ -656,9 +707,25 @@ namespace Violet
 		inline size_type size() const { return mData.size(); }
 		inline bool is_at_end() const { return (mPos >= mData.size()); }
 
+		// template<typename A,
+		// 	typename = std::enable_if_t<
+		// 		std::is_scalar_v<A> ||
+		// 		std::is_convertible_v<A, const char *>
+		// 	>>
+		// Buffer &operator<<(A x) {
+		// 	if constexpr (std::is_array_v<A>)
+		// 		write<std::add_pointer_t<std::remove_extent_t<A>>>(x);
+		// 	else
+		// 		write<A>(x);
+		// 	return *this;
+		// }
+
 		template<class A>
 		Buffer &operator<<(A&&x) {
-			write<std::decay_t<A>>(x);
+			if constexpr (std::is_convertible_v<A, std::string_view>)
+				write<std::string_view>(x);
+			else
+				write<A>(x);
 			return *this;
 		}
 

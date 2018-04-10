@@ -246,7 +246,7 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 				f.write(src.substr(read_pos, end_read_pos - read_pos));
 			if (pos != std::string::npos && c.front() != '/' && c.front() != '?')
 			{
-				const Curly::Tag tag(c);
+				const Curly::Tag tag{c};
 				if(tag.GetType() != Curly::modError)
 				switch (tag.GetTag())
 				{
@@ -311,39 +311,28 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 						bool skip = true;
 						if (tag.GetObjCount() > 1 && tag.GetObj(0).is_string && tag.GetObj(1).is_string)
 						{
-							if (auto db = info.FetchList(tag.GetObj(0).str); db)
+							const Hi::map_t& db = info.list(tag.GetObj(0).str);
+							if (auto f = db.find(tag.GetObj(1).str); f != db.end())
 							{
-								auto f = std::find_if(db->begin(), db->end(), [str = tag.GetObj(1).str](StringPair&p) { return p.first == str; });
-								if (f != db->end())
+								if (tag.GetObjCount() <= 2) {
+									skip = false;
+								}
+								else if (tag.GetObjCount() == 4 && !tag.GetObj(2).is_string && tag.GetObj(3).is_string)
 								{
-									if (tag.GetObjCount() > 2)
-									{
-										if (tag.GetObjCount() == 4 && !tag.GetObj(2).is_string && tag.GetObj(3).is_string)
-											{
-												long v1, v2;
-												if (sscanf(f->second.c_str(), "%ld", &v1) == 1 && sscanf(tag.GetObj(3).str.data(), "%ld", &v2) == 1)
-													switch (tag.GetObj(2).val) {
-													case '=': case 0x3d3d: // "=="
-														if (v1 == v2) skip = false;
-														break;
-													case '>':
-														if (v1 > v2) skip = false;
-														break;
-													case '<':
-														if (v1 < v2) skip = false;
-														break;
-													}
-												else switch (tag.GetObj(2).val) {
-													case '=': case 0x3d3d: // "=="
-														if (f->second == tag.GetObj(3).str) skip = false;
-														break;
-													}
-											}
-									}
-									else
-									{
-										skip = false;
-									}
+									long v1, v2;
+									if (sscanf(f->second.c_str(), "%ld", &v1) == 1 && sscanf(tag.GetObj(3).str.data(), "%ld", &v2) == 1)
+										switch (tag.GetObj(2).val) {
+										case '=': case 0x3d3d: // "=="
+											if (v1 == v2) skip = false; break;
+										case '>':
+											if (v1 > v2) skip = false; break;
+										case '<':
+											if (v1 < v2) skip = false; break;
+										}
+									else switch (tag.GetObj(2).val) {
+										case '=': case 0x3d3d: // "=="
+											if (f->second == tag.GetObj(3).str) skip = false; break;
+										}
 								}
 							}
 						}
@@ -356,22 +345,11 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 
 
 				case Curly::tagEcho:
-					if(tag.GetObjCount() == 1)
-						if (tag.GetObj(0).child)
-						{
-							if (auto db = info.FetchList(tag.GetObj(0).str); db)
-							{
-								if (auto a = std::find_if(db->begin(), db->end(), [str = tag.GetObj(0).child->str](StringPair&p) { return p.first == str; });
-									a != db->end())
-									f.write<std::string_view>(a->second);
-							}
-						}
-						else
-						{
-							if (auto a = std::find_if(info.clipboard.begin(), info.clipboard.end(), [str = tag.GetObj(0).str](StringPair&p) { return p.first == str; });
-								a != info.clipboard.end())
-								f.write<std::string_view>(a->second);
-						}
+					if(tag.GetObjCount() == 1) {
+							const Hi::map_t& db = tag.GetObj(0).child ? info.list(tag.GetObj(0).str) : info.clipboard;
+							if (auto a = db.find(tag.GetObj(0).child->str); a != db.end())
+								f << a->second;
+					}
 					break;
 
 				case Curly::tagStatusErrorCode:
@@ -454,8 +432,8 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 						Captcha::Init c;
 						c.Kickstart(true);
 						
-						info.clipboard.emplace_back("captcha_seed", c.seed);
-						info.clipboard.emplace_back("captcha_image", c.Imt.PicFilename.data());
+						info.clipboard["captcha_seed"] = std::move(c.seed);
+						info.clipboard["captcha_image"] = c.Imt.PicFilename;	// this one is moved in the next step
 						c.Imt.Data = std::async(std::launch::async, Captcha::Image::process, c.Imt.Collection);
 						Captcha::Signature::registry.emplace_back(std::move(c.Imt), time(nullptr));
 					}
@@ -473,12 +451,11 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 							const char * e = "Invalid username and/or password.<br>";
 							data.reserve(count);
 							for (unsigned i = 0; i < count; ++i)
-							{
-								auto p = std::find_if(info.post.begin(), info.post.end(), [str = tag.GetObj(i).str](StringPair &k) { return k.first == str; });
-								if (p == info.post.end())
+								if (auto p = info.post.find(tag.GetObj(i).str); p != info.post.end())
+									data.emplace_back(p->second);
+								else
 									ok = false;
-								else data.emplace_back(p->second);
-							}
+									
 							if (!ok) break;
 							if (data[0].empty())
 							{
@@ -489,7 +466,7 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 								data[0].resize(data[0].length() - 1);
 							auto ct = std::remove_if(data[0].begin(), data[0].end(), [](char c) { return (c == '\"' || c == '\''); });
 							data[0].erase(ct, data[0].end());
-							info.clipboard.emplace_back(tag.GetObj(0).str, data[0]);
+							info.clipboard[static_cast<std::string>(tag.GetObj(0).str)] = data[0];
 							{
 								auto e = std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !IsUsernameAcceptable(c); });
 								if (e != data[0].end())
@@ -547,24 +524,21 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 							break;
 						}
 						if (error_msg.length())
-							info.clipboard.emplace_back("session_error", error_msg);
+							info.clipboard["session_error"] = std::move(error_msg);
+							
 						if (data.size() > 0) {
 #ifndef WRITE_DATES_ONLY_ON_HEADERS
 							WriteDateToLog();
 #endif
-							if (ss)
-							{
-								log_heap.write(" * User `"sv);
-								log_heap.write(ss->username);
-								log_heap.write("` successfully logged in."sv);
+							std::lock_guard<std::mutex> lock(logging.first);
+							if (ss) {
+								logging.second << " * User `"sv << ss->username << "` successfully logged in."sv;
 								printf(" > logon: `%s`\r\n", ss->username.c_str());
 							}
-							else
-							{
-								log_heap.write(" * Failed login attempt! Handle used: "sv);
-								log_heap.write(data[0]);
+							else {
+								logging.second << " * Failed login attempt! Handle used: "sv << data[0];
 							}
-							log_heap.write<uint16_t>(0xa0d);
+							logging.second.write<uint16_t>(0xa0d);
 						}
 					}
 					break;
@@ -586,12 +560,13 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 						if (amt > MasterSocket::sessions.size())
 						{
 							char str[64];
-							snprintf(str, 64u, " > Session `%s` closed by user.\r\n", name.c_str());
+							snprintf(str, 64u, " > Session `%s` closed by user.", name.c_str());
 #ifndef WRITE_DATES_ONLY_ON_HEADERS
 							WriteDateToLog();
 #endif
-							MasterSocket::log_heap.write_data(str, static_cast<uint32_t>(strlen(str)));
-							printf(str);
+							puts(str);
+							std::lock_guard<std::mutex> lock(logging.first);
+							logging.second << str << "\r\n"sv;
 						}
 						ss = nullptr;
 						info.AddHeader("Set-Cookie", SESSION_KILL_CMD);
@@ -609,12 +584,11 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 							std::vector<std::string> data;
 							data.reserve(count);
 							for (unsigned i = 0; i < count; ++i)
-							{
-								auto p = std::find_if(info.post.begin(), info.post.end(), [str = tag.GetObj(i).str](StringPair &k) { return k.first == str; });
-								if (p == info.post.end())
+								if (auto p = info.post.find(tag.GetObj(i).str); p != info.post.end())
+									data.emplace_back(p->second);
+								else
 									ok = false;
-								else data.emplace_back(p->second);
-							}
+									
 							if (!ok) break;
 							if (!CheckRegistrationData(data, error_msg))
 								ok = false;
@@ -623,8 +597,8 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 							data[0].erase(ct, data[0].end());
 							ct = std::remove_if(data[3].begin(), data[3].end(), has_quotes);
 							data[3].erase(ct, data[3].end());
-							info.clipboard.emplace_back(tag.GetObj(0).str, data[0]);
-							info.clipboard.emplace_back(tag.GetObj(3).str, data[3]);
+							info.clipboard[static_cast<std::string>(tag.GetObj(0).str)] = data[0];
+							info.clipboard[static_cast<std::string>(tag.GetObj(3).str)] = data[3];
 							if (!ok) break;
 							else {
 								std::string dir(dir_work);
@@ -667,23 +641,21 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 									w.write<time_t>( 0x0 );
 									w.write_to_file((dir + USERFILE_LASTLOGIN).c_str());
 
-									info.clipboard.emplace_back("register_msg", "Account `<strong>" + data[0] + "</strong>` has been created.");
+									info.clipboard["register_msg"] = "Account `<strong>" + data[0] + "</strong>` has been created.";
 
 									CreateSession(data[0], nullptr);
 
 #ifndef WRITE_DATES_ONLY_ON_HEADERS
 									WriteDateToLog();
 #endif
-									log_heap.write(" * Account `"sv);
-									log_heap.write(data[0]);
-									log_heap.write("` registered."sv);
-									log_heap.write<uint16_t>(0xa0d);
 									printf(" > register: `%s`\r\n", data[0].c_str());
+									std::lock_guard<std::mutex> lock(logging.first);
+									logging.second << " * Account `"sv << data[0] << "` registered.\r\n"sv;
 								}
 							}
 						}
 						if (error_msg.length())
-							info.clipboard.emplace_back("session_error", error_msg);
+							info.clipboard["session_error"] = std::move(error_msg);
 					}
 					break;
 
