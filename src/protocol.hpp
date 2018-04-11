@@ -29,7 +29,24 @@
 #define MAX_HEAP_SIZE 3200
 #endif
 
+
+
+#define WRITE_DATES_ONLY_ON_HEADERS
+#define USE_PACKET_COMPRESSION
+
+#define USERFILE_ACC "/account.dat"
+#define USERFILE_SALT "/salt"
+#define USERFILE_LASTLOGIN "/__time64"
+
+#define FORUMFILE_MAIN "/forum.dat"
+
+#define SESSION_KILL_CMD "SSID=null; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+
+#define ___KEEP_ALIVE_CONNECTION
+
 //#define MONITOR_SOCKETS
+
+
 
 inline void GetTimeGMT(char * dest, size_t buffSize, const char *_format, bool localTime = false);
 
@@ -154,6 +171,20 @@ private:
 	void HandleHTML(Violet::UniBuffer &file, uint16_t error);
 
 	void CreateSession(std::string_view name, Violet::UniBuffer *loaded_file);
+
+	static bool CheckRegistrationData(std::vector<std::string> &data, std::string &error_msg);
+
+	
+	static inline std::string& ensure_closing_slash(std::string &s) {
+		if (s.back() != '/')
+			s += '/';
+		return s;
+	}
+
+public:
+	static inline bool is_username_acceptable(const char c) {
+		return ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_');
+	}
 
 public:
 	

@@ -20,21 +20,7 @@
 #include "pch.h"
 //#include <strptime.h>
 #include "app_lifetime.h"
-#include "curly_tags.h"
 #include "protocol.hpp"
-
-#define WRITE_DATES_ONLY_ON_HEADERS
-#define USE_PACKET_COMPRESSION
-
-#define USERFILE_ACC "/account.dat"
-#define USERFILE_SALT "/salt"
-#define USERFILE_LASTLOGIN "/__time64"
-
-#define FORUMFILE_MAIN "/forum.dat"
-
-#define SESSION_KILL_CMD "SSID=null; expires=Thu, 01 Jan 1970 00:00:00 GMT"
-
-#define ___KEEP_ALIVE_CONNECTION
 
 std::map<std::string, std::string, Violet::functor_less_comparator> Protocol::content_types;
 
@@ -81,12 +67,6 @@ std::string url_decode(const std::string_view& str) {
 		}
 	}
 	return ret;
-}
-
-inline std::string& ensure_closing_slash(std::string &s) {
-	if (s.back() != '/')
-		s += '/';
-	return s;
 }
 
 std::string ReadUntilSpace(Violet::UniBuffer &src, const char trim_char)
@@ -628,14 +608,16 @@ void Protocol::HandleRequest()
 	{
 		Violet::UniBuffer b, varf;
 		Hi::headers_t::iterator key;
-		const auto get_mark = strfind(info.fetch, '?');
+		bool is_html = false, modified = true, partial = false, created = false;
+		uint16_t error = 0;
 		std::string_view filename = info.fetch;
+		const auto get_mark = Violet::find_skip_utf8(filename, '?');
+
 		if (get_mark != std::string::npos) {
 			info.ParseGET(info.fetch, get_mark + 1);
 			filename = filename.substr(0, get_mark);
 		}
-		uint16_t error = 0;
-		bool is_html = false, modified = true, partial = false, created = false;
+
 		if (info.method == Hi::Method::Post && filename == "/savePycBz") {
 			auto fd1 = std::find_if(info.file.begin(), info.file.end(), [](const Hi::_F &sp) { return sp.name == "upfile"; });
 			if (fd1 != info.file.end()) {
@@ -911,12 +893,7 @@ void Protocol::HandleRequest()
 	}
 }
 
-inline bool IsUsernameAcceptable(const char c)
-{
-	return ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_');
-}
-
-inline bool CheckRegistrationData(std::vector<std::string> &data, std::string &error_msg)
+bool Protocol::CheckRegistrationData(std::vector<std::string> &data, std::string &error_msg)
 {
 	if(data[0].empty())
 	{
@@ -972,7 +949,7 @@ inline bool CheckRegistrationData(std::vector<std::string> &data, std::string &e
 	}
 	else
 	{
-		if (std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !IsUsernameAcceptable(c); }) != data[0].end())
+		if (std::find_if_not(data[0].begin(), data[0].end(), is_username_acceptable) != data[0].end())
 		{
 			error_msg += "Username can only contain letters, digits and an underscore.<br>";
 			return false;
@@ -996,30 +973,6 @@ inline bool CheckRegistrationData(std::vector<std::string> &data, std::string &e
 	}
 	return true;
 }
-
-inline void GenerateSalt(Violet::UniBuffer &dest, const unsigned _Size = 512u)
-{
-	std::random_device dev;
-	std::minstd_rand gen{ dev() };
-	std::uniform_int_distribution<int> uid{ CHAR_MIN, CHAR_MAX };
-    dest.resize(_Size);
-	auto d = dest.data();
-	for (unsigned i = _Size; i > 0; --i)
-		(*(d++)) = static_cast<char>(uid(gen));
-}
-
-bool DirectoryExists(const char* pzPath)
-{
-	struct stat st;
-	return ::stat(pzPath, &st) == 0 ? (st.st_mode & S_IFDIR != 0) : false;
-}
-
-inline bool FileExists(const char * szPath) {
-	struct stat buffer;
-	return ::stat(szPath, &buffer) == 0;
-}
-
-#include "handle_html.hpp"
 
 void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_file = nullptr)
 {
@@ -1047,7 +1000,7 @@ void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_fi
 		}
 		rdata[30] = 0x0;
 		for (auto c : name)
-			if (IsUsernameAcceptable(c))
+			if (is_username_acceptable(c))
 				cookie += c;
 		cookie += rdata;
 		auto ssid = sessions.emplace(cookie, std::string(name.data(), name.size()));

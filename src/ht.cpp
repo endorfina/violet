@@ -17,122 +17,32 @@
     along with Violet.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#pragma once
+#include "pch.h"
+#include "protocol.hpp"
+#include "curly_tags.hpp"
 
-template<typename T, typename = void>
-struct is_view : std::false_type {};
+using namespace std::string_view_literals;
 
-template<typename... Ts>
-struct is_view_helper {};
-
-template<typename T>
-struct is_view<
-        T,
-        std::conditional_t<
-            false,
-            is_view_helper<
-                typename T::size_type,
-                decltype(std::declval<T>().size()),
-                decltype(std::declval<T>().begin()),
-                decltype(std::declval<T>().end()),
-                decltype(std::declval<T>().remove_prefix(0))
-                >,
-            void
-            >
-        > : public std::true_type {};
-
-template<typename A>
-static void skip_potential_bom(A &text)
+inline void GenerateSalt(Violet::UniBuffer &dest, const unsigned _Size = 512u)
 {
-	if constexpr (is_view<A>::value) {
-		if (text.size() < 3)
-			return;
-	}
-	if (static_cast<unsigned char>(text[0]) == 0xef && 
-		static_cast<unsigned char>(text[1]) == 0xbb && 
-		static_cast<unsigned char>(text[2]) == 0xbf)
-	{
-		if constexpr (is_view<A>::value)
-			text.remove_prefix(3);
-		else
-			text += 3;
-	}
+	std::random_device dev;
+	std::minstd_rand gen{ dev() };
+	std::uniform_int_distribution<int> uid{ CHAR_MIN, CHAR_MAX };
+    dest.resize(_Size);
+	auto d = dest.data();
+	for (unsigned i = _Size; i > 0; --i)
+		(*(d++)) = static_cast<char>(uid(gen));
 }
 
-template<typename A>
-inline const A * __find(const A * p, const size_t n, const A c) {
-	for (size_t i = 0; i < n; ++i, ++p)
-		if (*p == c)
-			return p;
-	return nullptr;
-}
-
-template<typename A>
-inline const A * __find7(const A * p, const size_t n, const A c) {
-	for (size_t i = 0; i < n;) {
-		const auto len = Violet::internal::utf8x::sequence_length(p);
-		if (len > 1 && len <= 4) {
-			i += len;
-			p += len;
-			continue;
-		}
-		else if (*p == c)
-			return p;
-		++i; ++p;
-	}
-	return nullptr;
-}
-
-template<typename A>
-const A * __find7q(const A * p, const size_t n, const A c) {
-	for (size_t i = 0; i < n;) {
-		const auto len = Violet::internal::utf8x::sequence_length(p);
-		const auto q = *p;
-		if (len > 1 && len <= 4) {
-			i += len;
-			p += len;
-			continue;
-		}
-		else if (q == c)
-			return p;
-		else if (q == '\"' || q == '\'')
-			do { ++i; ++p; }
-			while (*p != q && i < n);
-		++i; ++p;
-	}
-	return nullptr;
-}
-
-template<typename A>
-size_t find_skip_utf8(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
+bool DirectoryExists(const char* pzPath)
 {
-	size_t __ret = std::basic_string_view<A>::npos;
-	const size_t __size = __s.size();
-	if (__pos < __size)
-	{
-		const A * __data = __s.data();
-		const size_t __n = __size - __pos;
-		const A * __p = __find7<A>(__data + __pos, __n, __c);
-		if (__p)
-		__ret = __p - __data;
-	}
-	return __ret;
+	struct stat st;
+	return ::stat(pzPath, &st) == 0 ? (st.st_mode & S_IFDIR != 0) : false;
 }
 
-template<typename A>
-size_t find_skip_utf8q(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
-{
-	size_t __ret = std::basic_string_view<A>::npos;
-	const size_t __size = __s.size();
-	if (__pos < __size)
-	{
-		const A * __data = __s.data();
-		const size_t __n = __size - __pos;
-		const A * __p = __find7q<A>(__data + __pos, __n, __c);
-		if (__p)
-		__ret = __p - __data;
-	}
-	return __ret;
+inline bool FileExists(const char * szPath) {
+	struct stat buffer;
+	return ::stat(szPath, &buffer) == 0;
 }
 
 template<class InOutContainer, class ViewT,
@@ -144,7 +54,7 @@ void WrapHTML(InOutContainer &f, const ViewT& wrapper_content, const ViewT& wrap
 	bool found_content = false;
 
 	while (true)
-		if (auto pos = find_skip_utf8(src, '{'), pose = pos != ViewT::npos ? find_skip_utf8(src, '}', pos + 1) : ViewT::npos;
+		if (auto pos = Violet::find_skip_utf8(src, '{'), pose = pos != ViewT::npos ? Violet::find_skip_utf8(src, '}', pos + 1) : ViewT::npos;
 				pose == ViewT::npos || src.size() < 3) {
 			if (out.size())
 				out.write(src);
@@ -173,19 +83,19 @@ void WrapHTML(InOutContainer &f, const ViewT& wrapper_content, const ViewT& wrap
 		f.swap(out);
 }
 
-inline bool IsCommand(const char c) {
+inline bool is_command(const char c) {
 	return (c >= '!' && c <= '~' && c != '=' && c != ',' && c != ':' && c != '(' && c != ')');
 }
 
 template<class View>
-inline size_t FindBlockEnclosure(const View& src, const size_t start) {
+inline size_t find_block_enclosure(const View& src, const size_t start) {
 	size_t p1 = start, p2 = start;
 	unsigned inner_block_count = 0;
 	bool found_exit_node = false;
 	do {
-		p1 = find_skip_utf8(src, '{', p2);
+		p1 = Violet::find_skip_utf8(src, '{', p2);
 		if (p1 != View::npos)
-			p2 = find_skip_utf8q(src, '}', p1);
+			p2 = Violet::find_skip_utf8q(src, '}', p1);
 		else { p2 = View::npos; break; }
 		if (p2 == View::npos)
 			break;
@@ -201,7 +111,7 @@ inline size_t FindBlockEnclosure(const View& src, const size_t start) {
 }
 
 template<typename A>
-inline bool IsMeaningful(A c)
+inline bool is_meaningful(A c)
 {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == '?' || c == '/';
 }
@@ -209,9 +119,9 @@ inline bool IsMeaningful(A c)
 void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 {
 	auto src = h.get_string();
-	skip_potential_bom(src);
+	Violet::skip_potential_bom(src);
 	
-	if (find_skip_utf8(src, '{') != std::string_view::npos)
+	if (Violet::find_skip_utf8(src, '{') != std::string_view::npos)
 	{
 		Violet::UniBuffer f;
 		size_t read_pos = 0, end_read_pos = 0;
@@ -226,14 +136,14 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 
 			std::string_view c;
 			do {
-				pos = find_skip_utf8(src, '{', pose);
+				pos = Violet::find_skip_utf8(src, '{', pose);
 				if (pos == std::string::npos) break;
 				c = src.substr(std::min(src.length(), pos + 1));
-				if (IsMeaningful(c.front())) break;
+				if (is_meaningful(c.front())) break;
 				pose = pos + 1;
 			} while(pose < src.length());
 			if (pos != std::string::npos) {
-				pose = find_skip_utf8q(src, '}', pos);
+				pose = Violet::find_skip_utf8q(src, '}', pos);
 				if (pose == std::string::npos)
 					pos = std::string::npos;
 				else
@@ -266,7 +176,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 						}
 						else if (name == "Plain") {
 							const size_t start = pose;
-							pose = FindBlockEnclosure(src, start);
+							pose = find_block_enclosure(src, start);
 							if (pose != std::string::npos) {
 								const size_t encl = src.find_last_of('{', pose - 1);
 								if (encl > start) {
@@ -298,9 +208,8 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 									}
 							}
 						}
-						if (skip)
-						{
-							pose = FindBlockEnclosure(src, pose);
+						if (skip) {
+							pose = find_block_enclosure(src, pose);
 						}
 					}
 					break;
@@ -336,9 +245,8 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 								}
 							}
 						}
-						if (skip)
-						{
-							pose = FindBlockEnclosure(src, pose);
+						if (skip) {
+							pose = find_block_enclosure(src, pose);
 						}
 					}
 					break;
@@ -404,7 +312,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 						Violet::UniBuffer t;
 						if (t.read_from_file(fn.c_str())) {
 							auto v = t.get_string();
-							skip_potential_bom(v);
+							Violet::skip_potential_bom(v);
 							f << v;
 						}
 					}
@@ -420,7 +328,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 							WrapHTML(t, src.substr(pose), tag.GetObjCount() > 1 ? tag.GetObj(1).str : "Untitled");
 							t.swap(h);
 							src = h.get_string();
-							skip_potential_bom(src);
+							Violet::skip_potential_bom(src);
 							pose = 0;
 						}
 					}
@@ -468,7 +376,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 							data[0].erase(ct, data[0].end());
 							info.clipboard[static_cast<std::string>(tag.GetObj(0).str)] = data[0];
 							{
-								auto e = std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !IsUsernameAcceptable(c); });
+								auto e = std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !is_username_acceptable(c); });
 								if (e != data[0].end())
 								{
 									error_msg += "Username contains illegal characters!<br>";
