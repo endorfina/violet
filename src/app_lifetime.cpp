@@ -18,7 +18,7 @@
 */
 
 #include "app_lifetime.h"
-#include "master_socket.h"
+#include "protocol.hpp"
 
 void init_openssl()	/// hmm... should probably switch to GNUTLS instead
 { 
@@ -82,7 +82,7 @@ void ConsoleHandlerRoutine(int sig)
 	ls.clear();
 	thread_stack.clear();
     cleanup_openssl();
-	MasterSocket::SaveLogHeapBuffer();
+	Protocol::SaveLogHeapBuffer();
 	puts("\nShutting down correctly.");
 	std::exit(EXIT_SUCCESS);
 }
@@ -99,6 +99,10 @@ void ComposeMIMEs(Map & ct, const char * fn) {
 			if (c[p2] == 0x20 || c[p2] == 0x0d)
 				break;
 		std::string s{ c + p1, c + p2 };
+
+		// I guess, why not???
+		s.shrink_to_fit();
+
 		if (c[p2] == 0x20) {
 			keyword = std::move(s);
 			f.set_pos(p2 + 1);
@@ -108,11 +112,11 @@ void ComposeMIMEs(Map & ct, const char * fn) {
 			f.set_pos(p2 + 2);
 		}
 	}
-	//ct.shrink_to_fit();
 }
 
 void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l, SSL_CTX * const ctx) {
-	std::list<MasterSocket> http;
+	std::list<Protocol> http;
+	Protocol::sessions_t http_session_registry;
 	unsigned int tick = 0;
 	bool block = true;
 
@@ -120,6 +124,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 		time_t now;
 		if (block) {
 			http.emplace_back(l.second.block_once(l.first.ssl ? ctx : nullptr),
+				http_session_registry,
 				l.first.dir.c_str(),
 				l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr
 				);
@@ -131,6 +136,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 		}
 		for (unsigned n = 0; l.second.acceptable() && n < 32; ++n) {
 			http.emplace_back(l.second.accept(l.first.ssl ? ctx : nullptr),
+				http_session_registry,
 				l.first.dir.c_str(),
 				l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr
 				);
@@ -140,7 +146,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 #endif
 		}
 
-		if (http.size() > 0)
+		if (!!http.size())
 		{
 			for (auto &it : http)
 				it.HandleRequest();
@@ -158,21 +164,21 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 		if (++tick > 500)
 		{
 			tick = 0;
-			if (auto amt = MasterSocket::sessions.size(); amt > 0 || Captcha::Signature::registry.size())
+			if (auto amt = http_session_registry.size(); !!amt || !!Captcha::Signature::registry.size())
 			{
 				now = time(nullptr);
-				for (auto it = MasterSocket::sessions.begin(); it != MasterSocket::sessions.end();)
+				for (auto it = http_session_registry.begin(); it != http_session_registry.end();)
 					if (now - it->second.last_activity > 1000)
-						it = MasterSocket::sessions.erase(it);
+						it = http_session_registry.erase(it);
 					else
 						++it;
-				if (amt > MasterSocket::sessions.size())
+				if (amt > http_session_registry.size())
 				{
 					char str[64];
-					snprintf(str, 64, " > %zu unused session(s) have been closed.", amt - MasterSocket::sessions.size());
+					snprintf(str, 64, " > %zu unused session(s) have been closed.", amt - http_session_registry.size());
 					puts(str);
-					std::lock_guard<std::mutex> lock(MasterSocket::logging.first);
-					MasterSocket::logging.second << str << '\n';
+					std::lock_guard<std::mutex> lock(Protocol::logging.first);
+					Protocol::logging.second << str << '\n';
 				}
 				for (auto it = Captcha::Signature::registry.begin(); it != Captcha::Signature::registry.end();)
 					if (now - it->second > 20)
@@ -187,7 +193,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 int ApplicationLifetime(const Application &app)
 {
 	SSL_CTX * ctx = nullptr;
-	(MasterSocket::dir_work = "werk/").shrink_to_fit();
+	(Protocol::dir_work = "werk/").shrink_to_fit();
 
 	puts("Starting ~");
 	
@@ -256,7 +262,7 @@ int ApplicationLifetime(const Application &app)
 	std::signal(SIGINT, ConsoleHandlerRoutine);
 	std::signal(SIGTERM, ConsoleHandlerRoutine);
 	
-	ComposeMIMEs(MasterSocket::content_types, "content_types.txt");
+	ComposeMIMEs(Protocol::content_types, "content_types.txt");
 
 	if (ls.size() == 1) {
 		RoutineA(ls[0], ctx); // no need for threads if there's just one.
@@ -272,7 +278,7 @@ int ApplicationLifetime(const Application &app)
 	thread_stack.clear();
 	SSL_CTX_free(ctx);
     cleanup_openssl();
-	MasterSocket::SaveLogHeapBuffer();
+	Protocol::SaveLogHeapBuffer();
 	return 0;
 }
 

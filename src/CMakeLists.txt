@@ -12,7 +12,7 @@ add_definitions(-DVIOLET_SOCKET_USE_OPENSSL)
 add_definitions(-DVIOLET_NO_COMPILE_HTTP)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../out)
 
 if (${CMAKE_BUILD_TYPE} STREQUAL Debug)
     add_definitions(-DDEBUG)
@@ -37,7 +37,7 @@ add_executable(violet
             main.cpp
             app_lifetime.cpp
             curly_tags.cpp
-            master_socket.cpp
+            protocol.cpp
             captcha_image_generator.cpp
             blog.cpp
             lodepng.cpp)

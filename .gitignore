@@ -1,3 +1,5 @@
 .vscode
-build
+build*
+.build*
+out
 src/lodepng_ext.hpp

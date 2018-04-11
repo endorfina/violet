@@ -38,7 +38,7 @@ std::string ReadAlphanumeric(const std::string &src, size_t pos = 0, bool includ
 std::string ReadUntilSpace(const std::string &src, size_t pos = 0, const char trim_char = 0);
 
 
-struct MasterSocket {
+struct Protocol {
 
 	struct Session {
 		std::string username, email;
@@ -56,15 +56,20 @@ struct MasterSocket {
 		~Session(void);
 	};
 
+	// struct __session_functor_comparator {
+
+	// };
+	using sessions_t = std::unordered_map<std::string, Session>;
+
 	struct Hi {
-		using headers_t = std::unordered_map<const char *, const char *, std::hash<const char *>, Violet::cis_functor_equal_comparator>;
+		using headers_t = std::unordered_map<std::string_view, const char *, std::hash<std::string_view>, Violet::cis_functor_equal_comparator>;
 		headers_t raw_headers, content_headers;
 		bool keepalive = false;
 		const char * fetch = nullptr;//, table;
 
-		enum class Method { Get, Head, Post, Put, Delete, Trace, Options, Error };
+		enum class Method { Get, Head, Post, Put, Delete, Trace, Options, Error }
 
-		Method method = Method::Error;
+		method = Method::Error;
 
 		using map_t = std::map<std::string, std::string, Violet::functor_less_comparator>;
 		map_t get, post, cookie, clipboard;
@@ -126,16 +131,21 @@ struct MasterSocket {
 	
 	const char * dir_accessible, * dir_accounts;
 
-	static unsigned long id_range;
-	const unsigned long id;
+	// deprecated
+	//static unsigned long id_range;
+	//const unsigned long id;
+
+	sessions_t & sessions;
+
+	Protocol(void) = delete;
 	
 	template<class T>
-	MasterSocket(T&&_sock, const char * access, const char * accounts)
-		: s{std::forward<T>(_sock)}, dir_accessible(access), dir_accounts(accounts), id(++id_range) {}
+	Protocol(T&&_sock, sessions_t &_se, const char * access, const char * accounts)
+		: s{std::forward<T>(_sock)}, dir_accessible(access), dir_accounts(accounts), sessions(_se) /*id(++id_range)*/ {}
 	
 #ifdef MONITOR_SOCKETS
 	unsigned _packets_sent = 0;
-	~MasterSocket() { printf("> ~Destroyed [id:%lu, packets sent:%u]\n", id, _packets_sent); }
+	~Protocol() { printf("> ~Destroyed [id:%lu, packets sent:%u]\n", id, _packets_sent); }
 #endif
 
 	void HandleRequest();
@@ -147,11 +157,9 @@ private:
 
 public:
 	
-		////   GLOBALS   ////
+		////   thread-safe GLOBALS   ////
 
 	static std::map<std::string, std::string, Violet::functor_less_comparator> content_types;
-
-	static std::unordered_map<std::string, Session> sessions;
 	
 	static std::list<Blog> active_blogs;
 

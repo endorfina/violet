@@ -206,7 +206,7 @@ inline bool IsMeaningful(A c)
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == '?' || c == '/';
 }
 
-void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
+void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 {
 	auto src = h.get_string();
 	skip_potential_bom(src);
@@ -547,17 +547,17 @@ void MasterSocket::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 					if (ss != nullptr)
 					{
 						std::string name;
-						auto amt = MasterSocket::sessions.size();
-						for (auto it = MasterSocket::sessions.begin(); it != MasterSocket::sessions.end(); ++it)
+						auto amt = Protocol::sessions.size();
+						for (auto it = Protocol::sessions.begin(); it != Protocol::sessions.end(); ++it)
 							if (&it->second == ss)
 							{
 								name = it->second.username;
-								it = MasterSocket::sessions.erase(it);
+								it = Protocol::sessions.erase(it);
 								break;
 							}
 							//else
 								//++it;
-						if (amt > MasterSocket::sessions.size())
+						if (amt > Protocol::sessions.size())
 						{
 							char str[64];
 							snprintf(str, 64u, " > Session `%s` closed by user.", name.c_str());

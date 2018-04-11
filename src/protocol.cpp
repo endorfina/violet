@@ -21,7 +21,7 @@
 //#include <strptime.h>
 #include "app_lifetime.h"
 #include "curly_tags.h"
-#include "master_socket.h"
+#include "protocol.hpp"
 
 #define WRITE_DATES_ONLY_ON_HEADERS
 #define USE_PACKET_COMPRESSION
@@ -36,23 +36,19 @@
 
 #define ___KEEP_ALIVE_CONNECTION
 
-std::map<std::string, std::string, Violet::functor_less_comparator> MasterSocket::content_types;
+std::map<std::string, std::string, Violet::functor_less_comparator> Protocol::content_types;
 
-std::unordered_map<std::string, MasterSocket::Session> MasterSocket::sessions;
-
-std::pair<std::mutex, Violet::UniBuffer> MasterSocket::logging;
+std::pair<std::mutex, Violet::UniBuffer> Protocol::logging;
 
 const char
-* MasterSocket::dir_html = "html",
-* MasterSocket::dir_log = "log";
+* Protocol::dir_html = "html",
+* Protocol::dir_log = "log";
 
-std::string MasterSocket::dir_work;
-
-unsigned long MasterSocket::id_range = 1000;
+std::string Protocol::dir_work;
 
 using namespace std::string_view_literals;
 
-void MasterSocket::Hi::Clear()
+void Protocol::Hi::Clear()
 {
 	get.clear();
 	post.clear();
@@ -264,7 +260,7 @@ void parse_post_content(const Str & src, Map& dest)
 	} while (pos < len);
 }
 
-size_t MasterSocket::Hi::BuildFromBuffer(Violet::UniBuffer &&src)
+size_t Protocol::Hi::BuildFromBuffer(Violet::UniBuffer &&src)
 {
 	unsigned i;
 	table.swap(src);
@@ -344,7 +340,7 @@ size_t MasterSocket::Hi::BuildFromBuffer(Violet::UniBuffer &&src)
 	return raw_headers.size();
 }
 
-size_t MasterSocket::Hi::ParsePOST(const char * data, const size_t len)
+size_t Protocol::Hi::ParsePOST(const char * data, const size_t len)
 {
 	size_t pos = 0;
 	if (data[0] == 0xd && data[1] == 0xa)
@@ -443,7 +439,7 @@ size_t MasterSocket::Hi::ParsePOST(const char * data, const size_t len)
 	else return 0;
 }
 
-size_t MasterSocket::Hi::ParseGET(const char *src, size_t offset)
+size_t Protocol::Hi::ParseGET(const char *src, size_t offset)
 {
 	const auto len = strlen(src);
 	while (offset < len) {
@@ -454,7 +450,7 @@ size_t MasterSocket::Hi::ParseGET(const char *src, size_t offset)
 	return get.size();
 }
 
-size_t MasterSocket::Hi::ParseCookies(const char *src)
+size_t Protocol::Hi::ParseCookies(const char *src)
 {
 	unsigned int pos = 0;
 	const auto len = strlen(src);
@@ -467,7 +463,7 @@ size_t MasterSocket::Hi::ParseCookies(const char *src)
 	return cookie.size();
 }
 
-void MasterSocket::Hi::Print()
+void Protocol::Hi::Print()
 {
 	printf(" > $Addr = ");
 	printf(fetch);
@@ -519,7 +515,7 @@ bool file_search(Violet::Buffer<T> &buff, S && sv, const char * folder)
 
 //#include <iostream> just for testing
 
-void MasterSocket::HandleRequest()
+void Protocol::HandleRequest()
 {
 	if (!received)
 	{
@@ -755,8 +751,8 @@ void MasterSocket::HandleRequest()
 				std::string_view ext;
 				if (auto last_period = filename.find_last_of('.'); last_period != std::string::npos)
 					ext = filename.substr(last_period);
-				const auto skey = MasterSocket::content_types.find(ext);
-				info.AddHeader("Content-Type", skey != MasterSocket::content_types.end() ? skey->second.c_str() : "text/plain");
+				const auto skey = Protocol::content_types.find(ext);
+				info.AddHeader("Content-Type", skey != Protocol::content_types.end() ? skey->second.c_str() : "text/plain");
 			}
 			// RANGE
 			key = info.raw_headers.find("range");
@@ -1023,9 +1019,9 @@ inline bool FileExists(const char * szPath) {
 	return ::stat(szPath, &buffer) == 0;
 }
 
-#include "handle_html.h"
+#include "handle_html.hpp"
 
-void MasterSocket::CreateSession(std::string_view name, Violet::UniBuffer *loaded_file = nullptr)
+void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_file = nullptr)
 {
 	std::string cookie;
 	auto r = std::find_if(sessions.begin(), sessions.end(), [&n = name](std::pair<const std::string, Session> &p) { return p.second.username == n; });
@@ -1060,7 +1056,7 @@ void MasterSocket::CreateSession(std::string_view name, Violet::UniBuffer *loade
 		bool buffer_is_private = false;
 		if (loaded_file == nullptr) {
 			std::string dir(dir_work);
-			loaded_file = new Violet::Buffer;
+			loaded_file = new Violet::UniBuffer;
 			buffer_is_private = true;
 			ensure_closing_slash(dir += dir_accounts);
 			auto pos = dir.length();
@@ -1089,7 +1085,7 @@ void MasterSocket::CreateSession(std::string_view name, Violet::UniBuffer *loade
 	info.AddHeader("Set-Cookie", info.temp_strs.back().c_str());
 }
 
-void MasterSocket::WriteDateToLog()
+void Protocol::WriteDateToLog()
 {
 	char dt[50];
 	GetTimeGMT(dt, sizeof(dt), "[%j %T]: ");
@@ -1097,7 +1093,7 @@ void MasterSocket::WriteDateToLog()
 	logging.second << dt;
 }
 
-void MasterSocket::SaveLogHeapBuffer()
+void Protocol::SaveLogHeapBuffer()
 {
 	if (logging.second.length() > 0)
 	{
@@ -1122,11 +1118,11 @@ inline void GetTimeGMT(char * dest, size_t buffSize, const char * _format, bool 
 	strftime(dest, buffSize, _format, &gmt);
 }
 
-MasterSocket::Session::Session(const std::string & _Name) : username(_Name), last_activity(time(nullptr)), character(nullptr)
+Protocol::Session::Session(const std::string & _Name) : username(_Name), last_activity(time(nullptr)), character(nullptr)
 {
 }
 
-MasterSocket::Session::~Session(void)
+Protocol::Session::~Session(void)
 {
 	if (character != nullptr)
 		delete character;
