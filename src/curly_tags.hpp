@@ -86,10 +86,4 @@ namespace Curly
 	};
 }
 
-//inline void SkipWhiteSpaces(const char *data, size_t &it);
-
-size_t strfind(const char * s, const char c, size_t start = 0, const size_t end = std::string::npos);
-
-size_t strfind_mindquotes(const char * s, const char c, size_t start = 0, const size_t end = std::string::npos);
-
 bool cik_strcmp(const char * s, const char * k);

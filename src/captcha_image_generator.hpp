@@ -23,6 +23,8 @@
 #define	F_TAU		6.28318530717958647692f	/* tau */
 #endif
 
+#include "echo/buffers.hpp"
+
 namespace Captcha
 {
 	typedef std::array<uint8_t, 140 * 30 * 4> image_t;
@@ -158,17 +160,17 @@ namespace Captcha
 
 	struct Init {
 		const std::string seed;
+		Signature Imt;
 
 	private:
-		template<typename Int>
-		static inline char random_char(Int i) { // Int from 0 to 61 = 10 + 2 * 26 + 1
-			return static_cast<char>(i + (i < 10 ? '0' : (i < 36 ? 55 : 61)));
+		static inline std::string generate(void) {
+			std::string s;
+			s.resize(13);
+			Violet::generate_random_string(s.data(), s.size());
+			return s;
 		}
 
-		static std::string generate(void);
-	
 	public:
-		Signature Imt;
 
 		Init(void) : seed{generate()} {}
 		Init(std::string _S) : seed{std::move(_S)} {}

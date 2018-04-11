@@ -977,7 +977,7 @@ bool Protocol::CheckRegistrationData(std::vector<std::string> &data, std::string
 void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_file = nullptr)
 {
 	std::string cookie;
-	auto r = std::find_if(sessions.begin(), sessions.end(), [&n = name](std::pair<const std::string, Session> &p) { return p.second.username == n; });
+	auto r = std::find_if(sessions.begin(), sessions.end(), [&name](std::pair<const std::string, Session> &p) { return p.second.username == name; });
 	if (r != sessions.end())
 	{
 		cookie = r->first;
@@ -986,23 +986,12 @@ void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_fi
 	}
 	else
 	{
-		char rdata[31];
-		{
-			std::random_device dev;
-			std::minstd_rand mr{dev()};
-			std::uniform_int_distribution<short int> sw{0, 2}, lc{'a', 'z'}, uc{'A', 'Z'}, di{'0', '9'};
-			for (int i = 0; i < 30; ++i)
-				switch(sw(mr)) {
-					case 0: rdata[i] = lc(mr); break;
-					case 1: rdata[i] = uc(mr); break;
-					default: rdata[i] = di(mr); break;
-				}
-		}
-		rdata[30] = 0x0;
 		for (auto c : name)
 			if (is_username_acceptable(c))
 				cookie += c;
-		cookie += rdata;
+		const auto _rpos = cookie.size();
+		cookie.resize(_rpos + 30);
+		Violet::generate_random_string(&cookie[_rpos], 30);
 		auto ssid = sessions.emplace(cookie, std::string(name.data(), name.size()));
 		ss = &(ssid.first->second);
 

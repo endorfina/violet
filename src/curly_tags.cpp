@@ -131,28 +131,8 @@ std::optional<std::pair<size_t,size_t>> find_markers(const std::string_view& sv,
 	return {};
 }
 
-
-size_t strfind(const char * s, const char c, size_t i, const size_t end) {
-	for (s += i; i < end && *s != 0x0; ++i, ++s)
-		if (*s == c)
-			return i;
-	return std::string::npos;
-}
-
-size_t strfind_mindquotes(const char * s, const char c, size_t i, const size_t end) {
-	for (s += i; i < end && *s != 0x0; ++i, ++s) {
-		const char q = *s;
-		if (q == c)
-			return i;
-		else if (q == '\"' || q == '\'') {
-			for (++i, ++s; *s != q && i < end && *s != 0x0; ++i, ++s);
-		}
-	}
-	return std::string::npos;
-}
-
 bool cik_strcmp(const char * s, const char * k) {
-	while (*s != '\0' && *k != '\0')
+	while (!!*s && !!*k)
 		if (::tolower(*(s++)) != *(k++))
 			return false;
 	return true;
@@ -207,7 +187,7 @@ Tag::Tag(std::string_view data) : type(Mode::modTrigger), tag(Key::tagUnknown)
 					type = Mode::modValue;
 					break;
 				case '(':
-					if (auto f = strfind_mindquotes(data.data(), ')', i, data.size()); f != std::string::npos) {
+					if (auto f = Violet::find_skip_utf8q(data, ')', i); f != std::string::npos) {
 						for (auto c = f + 1; c < data.size(); ++c)
 							if (data[c] > 0x20)
 								throw Error::bad_format;

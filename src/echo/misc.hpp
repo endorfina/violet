@@ -17,6 +17,9 @@
     along with Violet.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#pragma once
+#include <random>
+
 namespace Violet
 {
     template<typename T, typename = void>
@@ -35,7 +38,8 @@ namespace Violet
                     decltype(std::declval<T>().size()),
                     decltype(std::declval<T>().begin()),
                     decltype(std::declval<T>().end()),
-                    decltype(std::declval<T>().remove_prefix(0))
+                    decltype(std::declval<T>().remove_prefix(0)),
+                    decltype(std::declval<T>().remove_suffix(0))
                     >,
                 void
                 >
@@ -54,8 +58,10 @@ namespace Violet
         {
             if constexpr (is_view<A>::value)
                 text.remove_prefix(3);
-            else
+            else {
+                static_assert(std::is_pointer_v<A>);
                 text += 3;
+            }
         }
     }
 
@@ -135,5 +141,24 @@ namespace Violet
             __ret = __p - __data;
         }
         return __ret;
+    }
+
+    template<typename Int, typename Char>
+    inline Char __random_char(Int i) { // Int from 0 to 61 = 10 + 2 * 26 + 1
+        return static_cast<Char>(i + (i < 10 ? '0' : (i < 36 ? 55 : 61)));
+    }
+
+    template<class Generator, typename CharIter>
+    void generate_random_string(Generator&& gen, CharIter str, const size_t len) {
+        std::uniform_int_distribution<short int> d(0, 10 + ('z' - 'a') + ('Z' - 'A'));
+        for (const auto end = str + len; str != end; ++str)
+            *str = __random_char<short int, std::decay_t<decltype(*str)>>(d(gen));
+    }
+
+    template<typename CharIter>
+    inline void generate_random_string(CharIter str, const size_t len) {
+        std::random_device dev;
+        std::minstd_rand gen{ dev() };
+        generate_random_string(std::move(gen), str, len);
     }
 }

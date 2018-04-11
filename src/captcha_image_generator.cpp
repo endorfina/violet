@@ -24,16 +24,6 @@
 
 std::list<std::pair<Captcha::Signature, time_t>> Captcha::Signature::registry{};
 
-std::string Captcha::Init::generate(void) {
-	std::random_device gen;
-	std::minstd_rand rdev{ gen() };
-	std::uniform_int_distribution<int> d(0, 61);
-	std::string str;
-	str.resize(9);
-	for (auto &it : str)
-		it = random_char(d(rdev));
-	return str;
-}
 void Captcha::Init::Kickstart(bool gen_filename) {
 	std::seed_seq ssq(seed.begin(), seed.end());
 	std::minstd_rand rdev{ ssq };
@@ -44,11 +34,9 @@ void Captcha::Init::Kickstart(bool gen_filename) {
 	Imt.Collection[0].first = 0;
 
 	if (gen_filename) {
-		std::uniform_int_distribution<int> d3(0, 61);
 		Imt.PicFilename.reserve(36);
 		Imt.PicFilename.resize(32);
-		for (auto &it : Imt.PicFilename)
-			it = random_char(d3(rdev));
+		Violet::generate_random_string(std::move(rdev), Imt.PicFilename.data(), Imt.PicFilename.size());
 		Imt.PicFilename += ".png";
 	}
 }
