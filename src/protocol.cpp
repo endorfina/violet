@@ -473,22 +473,25 @@ inline unsigned int ReadUnsignedInt(Violet::Buffer<T> &src, uint8_t bytes = 2)
 
 // returns true if file is confirmed HTML file
 template<class T, class S>
-bool file_search(Violet::Buffer<T> &buff, S && sv, const char * folder)
+bool file_search(Violet::Buffer<T> &buff, S && sv, struct stat &attrib, const char * folder)
 {
-	std::string fn = static_cast<std::string>(sv);
-	if (buff.read_from_file((folder + fn).c_str())) {
-		return false;
-	}
-	if (buff.read_from_file((folder + fn + ".html").c_str())) {
-		return true;
-	}
-	if (strcmp(DIRECTORY_SHARED, folder) != 0) {
-		if (buff.read_from_file((DIRECTORY_SHARED + fn).c_str())) {
+	std::string fn { sv };
+	if (folder != nullptr) {
+		if (buff.read_from_file((fn = folder + fn).c_str())) {
+			::stat(fn.c_str(), &attrib);
 			return false;
 		}
-		if (buff.read_from_file((DIRECTORY_SHARED + fn + ".html").c_str())) {
+		if (buff.read_from_file((fn += ".html").c_str())) {
 			return true;
 		}
+		fn.assign(sv);
+	}
+	if (buff.read_from_file((fn = DIRECTORY_SHARED + fn).c_str())) {
+		::stat(fn.c_str(), &attrib);
+		return false;
+	}
+	if (buff.read_from_file((fn += ".html").c_str())) {
+		return true;
 	}
 	return false;
 }
@@ -611,6 +614,7 @@ void Protocol::HandleRequest()
 		bool is_html = false, modified = true, partial = false, created = false;
 		uint16_t error = 0;
 		std::string_view filename = info.fetch;
+		struct stat file_attrib;
 		const auto get_mark = Violet::find_skip_utf8(filename, '?');
 
 		if (get_mark != std::string::npos) {
@@ -670,7 +674,7 @@ void Protocol::HandleRequest()
 				}
 				else error = 404;
 			}
-			else if (!(is_html = file_search(varf, filename, shared.dir_accessible))) {
+			else if (!(is_html = file_search(varf, filename, file_attrib, shared.dir_accessible))) {
 				if (!varf.length()) {
 					std::string efn { dir_html };
 					efn += "/error.html";
@@ -693,9 +697,7 @@ void Protocol::HandleRequest()
 
 		if (!error && !is_html && !created)
 		{
-			struct stat attrib;
-			stat((shared.dir_accessible + static_cast<std::string>(filename)).c_str(), &attrib);
-			gmt = *gmtime(&(attrib.st_ctime));
+			gmt = *gmtime(&(file_attrib.st_ctime));
 			dtm = new char[64];
 			strftime(dtm, 64, dtformat, &gmt);
 			key = info.raw_headers.find("if-modified-since");

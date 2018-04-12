@@ -46,7 +46,7 @@ namespace Violet
             > : public std::true_type {};
 
     template<typename A>
-    static void skip_potential_bom(A &text)
+    constexpr void skip_potential_bom(A &text)
     {
         if constexpr (is_view<A>::value) {
             if (text.size() < 3)
@@ -66,7 +66,7 @@ namespace Violet
     }
 
     template<typename A>
-    inline const A * __find(const A * p, const size_t n, const A c) {
+    constexpr inline const A * __find(const A * p, const size_t n, const A c) {
         for (const auto e = p + n; p < e; ++p)
             if (*p == c)
                 return p;
@@ -74,7 +74,7 @@ namespace Violet
     }
 
     template<typename A>
-    inline const A * __find7(const A * p, const size_t n, const A c)
+    constexpr inline const A * __find7(const A * p, const size_t n, const A c)
     {
         const auto e = p + n;
         while (p < e) {
@@ -91,7 +91,7 @@ namespace Violet
     }
 
     template<typename A>
-    const A * __find7q(const A * p, const size_t n, const A c)
+    constexpr const A * __find7q(const A * p, const size_t n, const A c)
     {	
         const auto e = p + n;
         while (p < e) {
@@ -112,7 +112,7 @@ namespace Violet
     }
 
     template<typename A>
-    size_t find_skip_utf8(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
+    constexpr size_t find_skip_utf8(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
     {
         size_t __ret = std::basic_string_view<A>::npos;
         const size_t __size = __s.size();
@@ -128,7 +128,7 @@ namespace Violet
     }
 
     template<typename A>
-    size_t find_skip_utf8q(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
+    constexpr size_t find_skip_utf8q(const std::basic_string_view<A>&__s, const A __c, const size_t __pos = 0)
     {
         size_t __ret = std::basic_string_view<A>::npos;
         const size_t __size = __s.size();
@@ -141,6 +141,18 @@ namespace Violet
             __ret = __p - __data;
         }
         return __ret;
+    }
+
+    template<typename A>
+    constexpr void remove_prefix_whitespace(std::basic_string_view<A> &_sv) {
+        while (!!_sv.length() && !!std::isspace(static_cast<unsigned char>(_sv.front())))
+				_sv.remove_prefix(1);
+    }
+
+    template<typename A>
+    constexpr void remove_suffix_whitespace(std::basic_string_view<A> &_sv) {
+        while (!!_sv.length() && !!std::isspace(static_cast<unsigned char>(_sv.back())))
+				_sv.remove_suffix(1);
     }
 
     template<typename Int, typename Char>

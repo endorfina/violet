@@ -175,6 +175,7 @@ public:
 		sessions_t sessions;
 		std::vector<Blog> active_blogs;
 		std::list<std::pair<Captcha::Signature, time_t>> captcha_sig;
+		std::string_view var_copyright;
 
 		Shared(const char * access, const char * accounts)
 			: dir_accessible(access), dir_accounts(accounts) {}

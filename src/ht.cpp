@@ -291,11 +291,8 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 					break;
 
 				case Curly::tagCopyright:
-					f.write("&copy;&nbsp;2017&nbsp;0x65"sv);
-					break;
-
-				case Curly::tagBitcoin:
-					f.write("<a href=\"http://bitcoin.org\" target=_blank>BitCoin</a>:&nbsp;<a class=\"bitcoin_link\" href=\"bitcoin:1JGduM5un6Q6LqGQckkTH2FUs8p36NF3t9\">1JGduM5un6Q6LqGQckkTH2FUs8p36NF3t9</a>"sv);
+					if (!!shared.var_copyright.length())
+						f.write(shared.var_copyright);
 					break;
 
 				case Curly::tagBattery:

@@ -27,7 +27,7 @@ struct Application {
 	struct Server {
 		uint16_t port;
 		bool ssl = false;
-		std::string dir = DIRECTORY_SHARED, dir_meta;
+		std::string dir, dir_meta;
 		Server(uint16_t _p) : port(_p) {}
 	};
 	std::list<Server> stack;

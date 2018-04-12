@@ -9,5 +9,5 @@ As of now, violet uses *lodepng* for captcha image encoding.
 Build using:
 ```bash
 $ mkdir .build
-$ cd .build && cmake ../src && make
+$ cd .build && cmake [-DOPENSSL=FALSE] ../src && make
 ```

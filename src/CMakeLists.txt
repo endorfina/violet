@@ -2,13 +2,22 @@ cmake_minimum_required(VERSION 3.5)
 
 project(violet)
 
-set(CMAKE_VERBOSE_MAKEFILE ON)
+#set(CMAKE_VERBOSE_MAKEFILE ON)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
-add_definitions(-DVIOLET_SOCKET_USE_OPENSSL)
+if(DEFINED OPENSSL)
+    message(STATUS "OPENSSL set to ${OPENSSL}")
+else()
+    set(OPENSSL TRUE)
+    message(STATUS "OPENSSL undefined. Default value is ${OPENSSL}")
+endif()
+
+if(OPENSSL)
+    add_definitions(-DVIOLET_SOCKET_USE_OPENSSL)
+endif()
 add_definitions(-DVIOLET_NO_COMPILE_HTTP)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -43,9 +52,12 @@ add_executable(violet
             blog.cpp
             lodepng.cpp)
 
+set(LIBS "z")
+if(OPENSSL)
+    set(LIBS ${LIBS} "ssl" "crypto")
+endif()
+
 # add lib dependencies
 target_link_libraries(violet
                       echo
-                      z
-                      ssl
-                      crypto)
+                      ${LIBS})

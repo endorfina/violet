@@ -20,7 +20,8 @@
 #include "app_lifetime.h"
 #include "protocol.hpp"
 
-void init_openssl()	/// hmm... should probably switch to GNUTLS instead
+#ifdef VIOLET_SOCKET_USE_OPENSSL	/// hmm... should probably switch to GNUTLS instead
+void init_openssl()
 { 
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
@@ -64,6 +65,7 @@ void configure_context(SSL_CTX *ctx)
 	//int rc = SSL_CTX_set_cipher_list(ctx, "ALL:!ECDH");
 	//assert(0 != rc);
 }
+#endif
 
 #include <csignal>
 #include <thread>
@@ -81,7 +83,9 @@ void ConsoleHandlerRoutine(int sig)
 		t.join();
 	ls.clear();
 	thread_stack.clear();
+#ifdef VIOLET_SOCKET_USE_OPENSSL
     cleanup_openssl();
+#endif
 	Protocol::SaveLogHeapBuffer();
 	puts("\nShutting down correctly.");
 	std::exit(EXIT_SUCCESS);
@@ -114,16 +118,27 @@ void ComposeMIMEs(Map & ct, const char * fn) {
 	}
 }
 
-void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l, SSL_CTX * const ctx) {
+void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l
+#ifdef VIOLET_SOCKET_USE_OPENSSL
+, SSL_CTX * const ctx
+#endif
+) {
 	std::list<Protocol> http;
-	Protocol::Shared shared_registry{ l.first.dir.c_str(), l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr };
+	Protocol::Shared shared_registry {
+		l.first.dir.size() ? l.first.dir.c_str() : nullptr,
+		l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr
+	};
 	unsigned int tick = 0;
 	bool block = true;
 
 	while (!killswitch) {
 		time_t now;
 		if (block) {
-			http.emplace_back(l.second.block_once(l.first.ssl ? ctx : nullptr), shared_registry);
+			http.emplace_back(l.second.block_once(
+#ifdef VIOLET_SOCKET_USE_OPENSSL
+				l.first.ssl ? ctx : nullptr
+#endif
+				), shared_registry);
 #ifdef MONITOR_SOCKETS
 			auto &h = http.back();
 			printf("> New connection [id:%lu, s:%i, p:%hu]\n", h.id, h.s.s, l.first.port);
@@ -131,7 +146,11 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 			block = false;
 		}
 		for (unsigned n = 0; l.second.acceptable() && n < 32; ++n) {
-			http.emplace_back(l.second.accept(l.first.ssl ? ctx : nullptr), shared_registry);
+			http.emplace_back(l.second.accept(
+#ifdef VIOLET_SOCKET_USE_OPENSSL
+				l.first.ssl ? ctx : nullptr
+#endif
+				), shared_registry);
 #ifdef MONITOR_SOCKETS
 			auto &h = http.back();
 			printf("> New connection [id:%lu, s:%i, p:%hu]\n", h.id, h.s.s, l.first.port);
@@ -184,11 +203,9 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 
 int ApplicationLifetime(const Application &app)
 {
+#ifdef VIOLET_SOCKET_USE_OPENSSL
 	SSL_CTX * ctx = nullptr;
-	(Protocol::dir_work = "werk/").shrink_to_fit();
 
-	puts("Starting ~");
-	
 	for (auto& s : app.stack)
 		if (s.ssl)
 		{
@@ -197,6 +214,10 @@ int ApplicationLifetime(const Application &app)
 			configure_context(ctx);
 			break;
 		}
+#endif
+	(Protocol::dir_work = "werk/").shrink_to_fit();
+
+	puts("Starting ~");
 
 	for (auto& s : app.stack) {
 		ls.emplace_back(s, Violet::ListeningSocket());
@@ -256,82 +277,143 @@ int ApplicationLifetime(const Application &app)
 	
 	ComposeMIMEs(Protocol::content_types, "content_types.txt");
 
-	if (ls.size() == 1) {
-		RoutineA(ls[0], ctx); // no need for threads if there's just one.
+	if (ls.size() == 1) { // no need for threads if there's just one.
+#ifdef VIOLET_SOCKET_USE_OPENSSL
+		RoutineA(ls[0], ctx);
+#else
+		RoutineA(ls[0]);
+#endif
 	}
 	else {
 		for (auto &l : ls)
+#ifdef VIOLET_SOCKET_USE_OPENSSL
 			thread_stack.emplace_back(RoutineA, std::ref(l), ctx);
+#else
+			thread_stack.emplace_back(RoutineA, std::ref(l));
+#endif
 
 		for (auto &t : thread_stack)
 			t.join();
 	}
 	ls.clear();
 	thread_stack.clear();
+#ifdef VIOLET_SOCKET_USE_OPENSSL
 	SSL_CTX_free(ctx);
     cleanup_openssl();
+#endif
 	Protocol::SaveLogHeapBuffer();
 	return 0;
 }
 
+template<typename A>
+inline bool is_punct(const A c) {
+	return !! std::ispunct(static_cast<unsigned char>(c));
+}
+
+template<class Str>
+void print_tags(std::FILE* stream, const std::vector<Str> &v) {
+	bool append = false;
+	for (auto &&it : v) {
+		if (append)
+			std::putc(' ', stream);
+		else
+			append = true;
+		std::putc('\"', stream);
+		for (auto c : it)
+			std::putc(c, stream);
+		std::putc('\"', stream);
+	}
+}
+
 void Application::CheckConfigFile(const char *filename) {
-	Violet::UniBuffer src;
-	if (src.read_from_file(filename)) {
-		while (!src.is_at_end())
+	std::string __src;
+	if (Violet::internal::read_from_file(filename, __src)) {
+		std::string_view src{ __src };
+		while (!!src.length())
 		{
-			std::string_view l{ src.get_string_current() };
-			while (l.size() && !!std::isspace(static_cast<unsigned char>(l.front())))
-				l.remove_prefix(1);
-			if (!l.size())
+			Violet::remove_prefix_whitespace(src);
+			if (src.empty())
 				break;
-			l = l.substr(0, l.find('\n'));
-			src.set_pos(src.get_pos() + l.length());
-			while (l.size() && !!std::isspace(static_cast<unsigned char>(l.back())))
-				l.remove_suffix(1);
+			std::string_view l{ src.substr(0, src.find('\n')) };
+			
+			src.remove_prefix(l.length());
+
 			if (l.empty() || l.front() == '#')
 				continue;
-			size_t p1 = 0;
-			Violet::skip_whitespaces(l, p1);
-			if (l[p1] == '@') {
-				++p1;
-				Violet::skip_whitespaces(l, p1);
-				uint16_t port;
-				if (sscanf(l.data() + p1, "%hu", &port) != 1)
-					throw;
-				stack.emplace_back(port);
+			Violet::remove_suffix_whitespace(l);
+
+			std::vector<std::string_view> tags;
+			while(!!l.length() && l.front() != '#') {
+				size_t len;
+				const bool is_name = !is_punct(l.front());
+				if (!is_name && (l.front() == '\'' || l.front() == '\"')) {
+					len = l.find(l.front(), 1);
+					if (len > 1)
+						tags.emplace_back(l.substr(1, len - 2));
+					l.remove_prefix(std::min(len, l.length()));
+					Violet::remove_prefix_whitespace(l);
+				}
+				else {
+					for(len = 1; len < l.length() && (is_punct(l[len]) ^ is_name); ++len);
+					tags.emplace_back(l.substr(0, len));
+
+					l.remove_prefix(len);
+
+					if (is_name)
+						Violet::remove_suffix_whitespace(tags.back());
+					else
+						Violet::remove_prefix_whitespace(l);
+				}
 			}
-			else {
-				size_t p2 = p1;
-				for (; p2 < l.size() && l[p2] != 0x20 && l[p2] != '='; ++p2);
-				std::string name{ l.substr(p1, p2) };
-				p1 = p2;
-				Violet::skip_whitespaces(l, p1);
-				if (l[p1++] != '=' || stack.empty())
-					continue;
-				Violet::skip_whitespaces(l, p1);
-				std::string val{ l.substr(p1) };
-				if (val.empty() || val.front() == '#')
-					continue;
-				if (name == "SSL")
-				{
-					std::transform(val.begin(), val.end(), val.begin(), ::tolower);
-					if (val == "true" || val == "1")
-						stack.back().ssl = true;
-					else if (val == "false" || val == "0")
-						stack.back().ssl = false;
-					else throw;
+
+			if (!tags.size())	// just in case I forgot something
+				break;
+
+			if (tags[0] == "@") {
+				uint16_t port;
+				if (tags.size() == 2 && !!std::isdigit(tags[1].front()) && sscanf(tags[1].data(), "%hu", &port) == 1)
+					stack.emplace_back(port);
+				else {
+					printf("Wrong server declaration: ");
+					print_tags(stdout, tags);
+					puts("\nCorrect syntax is\n@ <port_number>");
+					std::exit(EXIT_FAILURE);
 				}
-				else if (name == "AccessDir")
-				{
-					stack.back().dir = val;
+				continue;
+			}
+			
+			if (stack.empty()) {
+				return;
+			}
+			if (tags.size() != 3 || tags[1] != "=") {
+				puts("Configuration error at:");
+				print_tags(stdout, tags);
+				puts("\nCorrect syntax is\n<variable_name> = <value>");
+				std::exit(EXIT_FAILURE);
+			}
+
+			if (tags[0] == "AccessDir")
+				stack.back().dir = static_cast<std::string>(tags[2]);
+			else if (tags[0] == "MetaDir")
+				stack.back().dir_meta = static_cast<std::string>(tags[2]);
+			else if (tags[0] == "SSL") {
+#ifndef VIOLET_SOCKET_USE_OPENSSL
+				puts("WARNING: Application has been built without SSL support");
+				printf("Server on port number %hu will be unsecure\n", stack.back().port);
+#else
+				std::string val { static_cast<std::string>(tags[2]) };
+				std::transform(val.begin(), val.end(), val.begin(), ::tolower);
+				if (val == "true" || val == "1" || val == "on")
+		 			stack.back().ssl = true;
+		 		else if (val == "false" || val == "0" || val == "off")
+		 			stack.back().ssl = false;
+				else {
+					puts("ERROR: Value assigned to \'SSL\' must be a boolean");
+					std::exit(EXIT_FAILURE);
 				}
-				else if (name == "MetaDir")
-				{
-					stack.back().dir_meta = val;
-				}
+#endif
 			}
 		}
-		printf("Configuration file parsed successfully.\n");
-		printf("Raw servers declared: %zu\n", stack.size());
+		printf("Sockets declared: %zu\n", stack.size());
 	}
 }

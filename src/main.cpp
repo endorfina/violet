@@ -27,12 +27,12 @@ int main(int argc, char *argv[])
 		app.CheckConfigFile(argc > 1 && !!strlen(argv[1]) ? argv[1] : "violet.conf");
 	}
 	catch (...) {
-		printf("EXIT_FAILURE\n");
-		printf("Wrong configuration file.\n");
+		//puts("EXIT_FAILURE");
+		puts("Exception thrown!");
 		return EXIT_FAILURE;
 	}
 	if (app.stack.empty()) {
-		printf("No servers were declared.\n");
+		puts("No servers were declared.");
 		return EXIT_FAILURE;
 	}
 	
