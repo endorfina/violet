@@ -518,8 +518,8 @@ void Protocol::HandleRequest()
 						
 						if (auto r2 = info.cookie.find("SSID"); r2 != info.cookie.end())
 						{
-							auto ssid = sessions.find(r2->second);
-							if (ssid != sessions.end())
+							auto ssid = shared.sessions.find(r2->second);
+							if (ssid != shared.sessions.end())
 							{
 								ss = &(ssid->second);
 								ss->last_activity = time(nullptr);
@@ -659,18 +659,18 @@ void Protocol::HandleRequest()
 			}
 		}
 		if (!error) {
-			if (filename.substr(1, 8) == "captcha.") {
-				auto capf = std::find_if(Captcha::Signature::registry.begin(), Captcha::Signature::registry.end(), [sv = filename.substr(9)] (const auto &c) { return c.first.PicFilename == sv; });
-				if (capf != Captcha::Signature::registry.end()) {
+			if (filename.substr(0, 9) == "/captcha.") {
+				auto capf = std::find_if(shared.captcha_sig.begin(), shared.captcha_sig.end(), [sv = filename.substr(9)] (const auto &c) { return c.first.PicFilename == sv; });
+				if (capf != shared.captcha_sig.end()) {
 					auto ef = capf->first.Data.get();
-					Captcha::Signature::registry.erase(capf);
+					shared.captcha_sig.erase(capf);
 					created = true;
 					if (ef.ptr)
 						varf.read_from_mem(ef.ptr, ef.size);
 				}
 				else error = 404;
 			}
-			else if (!(is_html = file_search(varf, filename, dir_accessible))) {
+			else if (!(is_html = file_search(varf, filename, shared.dir_accessible))) {
 				if (!varf.length()) {
 					std::string efn { dir_html };
 					efn += "/error.html";
@@ -694,7 +694,7 @@ void Protocol::HandleRequest()
 		if (!error && !is_html && !created)
 		{
 			struct stat attrib;
-			stat((dir_accessible + static_cast<std::string>(filename)).c_str(), &attrib);
+			stat((shared.dir_accessible + static_cast<std::string>(filename)).c_str(), &attrib);
 			gmt = *gmtime(&(attrib.st_ctime));
 			dtm = new char[64];
 			strftime(dtm, 64, dtformat, &gmt);
@@ -908,7 +908,7 @@ bool Protocol::CheckRegistrationData(std::vector<std::string> &data, std::string
 	else
 	{
 			Captcha::Init captcha{ std::move(data[4]) };
-			captcha.Kickstart(false);
+			captcha.set_up(false);
 
 			std::vector<Captcha::Signature::collectible_type> q(captcha.Imt.Collection.begin(), captcha.Imt.Collection.end());
 			for (int n = 3; n >= 0; --n)
@@ -977,8 +977,8 @@ bool Protocol::CheckRegistrationData(std::vector<std::string> &data, std::string
 void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_file = nullptr)
 {
 	std::string cookie;
-	auto r = std::find_if(sessions.begin(), sessions.end(), [&name](std::pair<const std::string, Session> &p) { return p.second.username == name; });
-	if (r != sessions.end())
+	auto r = std::find_if(shared.sessions.begin(), shared.sessions.end(), [&name](std::pair<const std::string, Session> &p) { return p.second.username == name; });
+	if (r != shared.sessions.end())
 	{
 		cookie = r->first;
 		ss = &r->second;
@@ -992,7 +992,7 @@ void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_fi
 		const auto _rpos = cookie.size();
 		cookie.resize(_rpos + 30);
 		Violet::generate_random_string(&cookie[_rpos], 30);
-		auto ssid = sessions.emplace(cookie, std::string(name.data(), name.size()));
+		auto ssid = shared.sessions.emplace(cookie, std::string(name.data(), name.size()));
 		ss = &(ssid.first->second);
 
 		bool buffer_is_private = false;
@@ -1000,7 +1000,7 @@ void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_fi
 			std::string dir(dir_work);
 			loaded_file = new Violet::UniBuffer;
 			buffer_is_private = true;
-			ensure_closing_slash(dir += dir_accounts);
+			ensure_closing_slash(dir += shared.dir_accounts);
 			auto pos = dir.length();
 			dir.append(name.data(), name.size());
 			std::transform(dir.begin() + pos, dir.end(), dir.begin() + pos, ::tolower);

@@ -36,7 +36,7 @@
 namespace Violet
 {
 	template<typename A>
-	void skip_whitespaces(A *s, const size_t size, size_t &it) {
+	constexpr void skip_whitespaces(A *s, const size_t size, size_t &it) {
 		for (; it < size && !!s[it] && !!std::isspace(static_cast<unsigned char>(s[it])); ++it);
 	}
 
@@ -55,19 +55,21 @@ namespace Violet
 		const auto __s = std::min(lhs.size(), rhs.size());
 		int __ret = 0;
 		for (std::remove_const_t<decltype(__s)> i = 0; i < __s; ++i)
-			if (::tolower(lhs[i]) < ::tolower(rhs[i])) {
+			if (const auto cl = ::tolower(lhs[i]), cr = ::tolower(rhs[i]);
+				cl < cr) {
 				__ret = -1;
 				break;
 			}
-			else if (::tolower(lhs[i]) > ::tolower(rhs[i])) {
+			else if (cl > cr) {
 				__ret = 1;
 				break;
 			}
-		if (__ret == 0)
+		if (__ret == 0) {
 			if (lhs.size() < rhs.size())
 			__ret = -1;
 			else if (lhs.size() > rhs.size())
 			__ret = 1;
+		}
 		return __ret;
 	}
 

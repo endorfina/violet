@@ -116,18 +116,14 @@ void ComposeMIMEs(Map & ct, const char * fn) {
 
 void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l, SSL_CTX * const ctx) {
 	std::list<Protocol> http;
-	Protocol::sessions_t http_session_registry;
+	Protocol::Shared shared_registry{ l.first.dir.c_str(), l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr };
 	unsigned int tick = 0;
 	bool block = true;
 
 	while (!killswitch) {
 		time_t now;
 		if (block) {
-			http.emplace_back(l.second.block_once(l.first.ssl ? ctx : nullptr),
-				http_session_registry,
-				l.first.dir.c_str(),
-				l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr
-				);
+			http.emplace_back(l.second.block_once(l.first.ssl ? ctx : nullptr), shared_registry);
 #ifdef MONITOR_SOCKETS
 			auto &h = http.back();
 			printf("> New connection [id:%lu, s:%i, p:%hu]\n", h.id, h.s.s, l.first.port);
@@ -135,11 +131,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 			block = false;
 		}
 		for (unsigned n = 0; l.second.acceptable() && n < 32; ++n) {
-			http.emplace_back(l.second.accept(l.first.ssl ? ctx : nullptr),
-				http_session_registry,
-				l.first.dir.c_str(),
-				l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr
-				);
+			http.emplace_back(l.second.accept(l.first.ssl ? ctx : nullptr), shared_registry);
 #ifdef MONITOR_SOCKETS
 			auto &h = http.back();
 			printf("> New connection [id:%lu, s:%i, p:%hu]\n", h.id, h.s.s, l.first.port);
@@ -164,25 +156,25 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l,
 		if (++tick > 500)
 		{
 			tick = 0;
-			if (auto amt = http_session_registry.size(); !!amt || !!Captcha::Signature::registry.size())
+			if (auto amt = shared_registry.sessions.size(); !!amt || !!shared_registry.captcha_sig.size())
 			{
 				now = time(nullptr);
-				for (auto it = http_session_registry.begin(); it != http_session_registry.end();)
+				for (auto it = shared_registry.sessions.begin(); it != shared_registry.sessions.end();)
 					if (now - it->second.last_activity > 1000)
-						it = http_session_registry.erase(it);
+						it = shared_registry.sessions.erase(it);
 					else
 						++it;
-				if (amt > http_session_registry.size())
+				if (amt > shared_registry.sessions.size())
 				{
 					char str[64];
-					snprintf(str, 64, " > %zu unused session(s) have been closed.", amt - http_session_registry.size());
+					snprintf(str, 64, " > %zu unused session(s) have been closed.", amt - shared_registry.sessions.size());
 					puts(str);
 					std::lock_guard<std::mutex> lock(Protocol::logging.first);
 					Protocol::logging.second << str << '\n';
 				}
-				for (auto it = Captcha::Signature::registry.begin(); it != Captcha::Signature::registry.end();)
+				for (auto it = shared_registry.captcha_sig.begin(); it != shared_registry.captcha_sig.end();)
 					if (now - it->second > 20)
-						it = Captcha::Signature::registry.erase(it);
+						it = shared_registry.captcha_sig.erase(it);
 					else
 						++it;
 			}

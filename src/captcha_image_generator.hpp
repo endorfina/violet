@@ -154,8 +154,6 @@ namespace Captcha
 		std::array<collectible_type, 4> Collection;
 		std::string PicFilename;
 		std::future<compatibility_memory_keeper> Data;
-	
-		static std::list<std::pair<Signature, time_t>> registry;
 	};
 
 	struct Init {
@@ -175,7 +173,7 @@ namespace Captcha
 		Init(void) : seed{generate()} {}
 		Init(std::string _S) : seed{std::move(_S)} {}
 
-		void Kickstart(bool gen_filename);
+		void set_up(bool gen_filename);
 	};
 	
 	struct line_segment {

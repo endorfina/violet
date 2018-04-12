@@ -22,9 +22,7 @@
 
 #include "lodepng.h"
 
-std::list<std::pair<Captcha::Signature, time_t>> Captcha::Signature::registry{};
-
-void Captcha::Init::Kickstart(bool gen_filename) {
+void Captcha::Init::set_up(bool gen_filename) {
 	std::seed_seq ssq(seed.begin(), seed.end());
 	std::minstd_rand rdev{ ssq };
 
@@ -34,8 +32,8 @@ void Captcha::Init::Kickstart(bool gen_filename) {
 	Imt.Collection[0].first = 0;
 
 	if (gen_filename) {
-		Imt.PicFilename.reserve(36);
-		Imt.PicFilename.resize(32);
+		Imt.PicFilename.reserve(30 + 4);
+		Imt.PicFilename.resize(30);
 		Violet::generate_random_string(std::move(rdev), Imt.PicFilename.data(), Imt.PicFilename.size());
 		Imt.PicFilename += ".png";
 	}

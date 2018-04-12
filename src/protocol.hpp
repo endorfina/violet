@@ -73,9 +73,6 @@ struct Protocol {
 		~Session(void);
 	};
 
-	// struct __session_functor_comparator {
-
-	// };
 	using sessions_t = std::unordered_map<std::string, Session>;
 
 	struct Hi {
@@ -146,20 +143,6 @@ struct Protocol {
 	Hi info;
 	Session *ss = nullptr;
 	
-	const char * dir_accessible, * dir_accounts;
-
-	// deprecated
-	//static unsigned long id_range;
-	//const unsigned long id;
-
-	sessions_t & sessions;
-
-	Protocol(void) = delete;
-	
-	template<class T>
-	Protocol(T&&_sock, sessions_t &_se, const char * access, const char * accounts)
-		: s{std::forward<T>(_sock)}, dir_accessible(access), dir_accounts(accounts), sessions(_se) /*id(++id_range)*/ {}
-	
 #ifdef MONITOR_SOCKETS
 	unsigned _packets_sent = 0;
 	~Protocol() { printf("> ~Destroyed [id:%lu, packets sent:%u]\n", id, _packets_sent); }
@@ -187,12 +170,27 @@ public:
 	}
 
 public:
+	struct Shared {
+		const char * const dir_accessible, * const dir_accounts;
+		sessions_t sessions;
+		std::vector<Blog> active_blogs;
+		std::list<std::pair<Captcha::Signature, time_t>> captcha_sig;
+
+		Shared(const char * access, const char * accounts)
+			: dir_accessible(access), dir_accounts(accounts) {}
+	};
+
+	Shared &shared;
+
+	Protocol(void) = delete;
+	
+	template<class T>
+	Protocol(T&&_sock, Shared &_se)
+		: s{std::forward<T>(_sock)}, shared(_se) {}
 	
 		////   thread-safe GLOBALS   ////
 
 	static std::map<std::string, std::string, Violet::functor_less_comparator> content_types;
-	
-	static std::list<Blog> active_blogs;
 
 	static const char *dir_html, *dir_log;
 

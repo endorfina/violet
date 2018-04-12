@@ -338,17 +338,17 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 					if (tag.GetType() == Curly::modTrigger)
 					{
 						Captcha::Init c;
-						c.Kickstart(true);
+						c.set_up(true);
 						
 						info.clipboard["captcha_seed"] = std::move(c.seed);
-						info.clipboard["captcha_image"] = c.Imt.PicFilename;	// this one is moved in the next step
+						info.clipboard["captcha_image"] = "/captcha." + c.Imt.PicFilename;	// this one is moved in the next step
 						c.Imt.Data = std::async(std::launch::async, Captcha::Image::process, c.Imt.Collection);
-						Captcha::Signature::registry.emplace_back(std::move(c.Imt), time(nullptr));
+						shared.captcha_sig.emplace_back(std::move(c.Imt), time(nullptr));
 					}
 					break;
 
 				case Curly::tagStartSession:
-					if (ss == nullptr && dir_accounts)
+					if (ss == nullptr && shared.dir_accounts)
 					{
 						const size_t count = tag.GetObjCount();
 						std::vector<std::string> data;
@@ -384,7 +384,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 								}
 							}
 							std::string dir(dir_work);
-							ensure_closing_slash(dir += dir_accounts);
+							ensure_closing_slash(dir += shared.dir_accounts);
 							auto pos = dir.length();
 							dir += data[0];
 							std::transform(dir.begin() + pos, dir.end(), dir.begin() + pos, ::tolower);
@@ -455,17 +455,17 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 					if (ss != nullptr)
 					{
 						std::string name;
-						auto amt = Protocol::sessions.size();
-						for (auto it = Protocol::sessions.begin(); it != Protocol::sessions.end(); ++it)
+						auto amt = shared.sessions.size();
+						for (auto it = shared.sessions.begin(); it != shared.sessions.end(); ++it)
 							if (&it->second == ss)
 							{
 								name = it->second.username;
-								it = Protocol::sessions.erase(it);
+								it = shared.sessions.erase(it);
 								break;
 							}
 							//else
 								//++it;
-						if (amt > Protocol::sessions.size())
+						if (amt > shared.sessions.size())
 						{
 							char str[64];
 							snprintf(str, 64u, " > Session `%s` closed by user.", name.c_str());
@@ -482,7 +482,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 					break;
 
 				case Curly::tagRegister:
-					if (ss == nullptr && dir_accounts)
+					if (ss == nullptr && shared.dir_accounts)
 					{
 						const size_t count = tag.GetObjCount();
 						std::string error_msg;
@@ -510,7 +510,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 							if (!ok) break;
 							else {
 								std::string dir(dir_work);
-								ensure_closing_slash(dir += dir_accounts);
+								ensure_closing_slash(dir += shared.dir_accounts);
 								auto pos = dir.length();
 								dir += data[0];
 								std::transform(dir.begin() + pos, dir.end(), dir.begin() + pos, ::tolower);
