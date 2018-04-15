@@ -48,20 +48,25 @@ namespace Violet
     template<typename A>
     constexpr void skip_potential_bom(A &text)
     {
+        const unsigned char * check = nullptr;
         if constexpr (is_view<A>::value) {
+            static_assert(sizeof(typename A::value_type) == 1);
             if (text.size() < 3)
                 return;
+            check = reinterpret_cast<const unsigned char *>(text.data());
         }
-        if (static_cast<unsigned char>(text[0]) == 0xef && 
-            static_cast<unsigned char>(text[1]) == 0xbb && 
-            static_cast<unsigned char>(text[2]) == 0xbf)
-        {
-            if constexpr (is_view<A>::value)
-                text.remove_prefix(3);
-            else {
-                static_assert(std::is_pointer_v<A>);
-                text += 3;
-            }
+        else {
+            static_assert(sizeof(std::decay_t<decltype(*text)>) == 1);
+            check = (const unsigned char *)&(*text);    // should take care of pointers and iterators
+        }
+        for (unsigned char bom : { 0xef, 0xbb, 0xbf })
+            if (bom != *check++)
+                return;
+        if constexpr (is_view<A>::value) {
+            text.remove_prefix(3);
+        }
+        else {
+            text += 3;
         }
     }
 

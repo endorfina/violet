@@ -36,7 +36,7 @@
 
 #define USERFILE_ACC "/account.dat"
 #define USERFILE_SALT "/salt"
-#define USERFILE_LASTLOGIN "/__time64"
+#define USERFILE_LASTLOGIN "/__time"
 
 #define FORUMFILE_MAIN "/forum.dat"
 
@@ -66,11 +66,12 @@ struct Protocol {
 			std::string name;
 		};
 
-		CharacterInfo * character;
+		std::unique_ptr<CharacterInfo> character;
 
-		Session(const std::string &name);
-
-		~Session(void);
+		template<class Str, typename = std::enable_if_t<std::is_convertible_v<Str, std::string>>>
+		Session(Str&& _Name)
+			: username(std::forward<Str>(_Name)), last_activity(time(nullptr)), character(nullptr)
+		{}
 	};
 
 	using sessions_t = std::unordered_map<std::string, Session>;
@@ -112,7 +113,8 @@ struct Protocol {
 
 		void Clear();
 
-		inline void AddHeader(const char *s1, const char *s2) { content_headers.emplace(s1, s2); }
+		template<class S1, class S2>
+		inline void AddHeader(S1&& s1, S2&& s2) { content_headers.emplace(std::forward<S1>(s1), std::forward<S2>(s2)); }
 
 		inline const char * GetTableAtPos() const { return table.data() + table.get_pos(); }
 

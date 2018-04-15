@@ -166,7 +166,7 @@ namespace Violet::badhtml
             auto len = sequence_length(a);
             if (len < 1 || len > 4)
                 throw std::make_pair<const char *, const char *>("Forbidden unicode codepoint", a);
-            if (const auto v = get_switch(a, len); is_html_forbidden(v))
+            if (is_html_forbidden(get_switch(a, len)))
                 throw std::make_pair<const char *, const char *>("Forbidden unicode codepoint", a);
             else
                 if (len == 1 && !p(*a)) break;
@@ -391,7 +391,7 @@ namespace Violet::badhtml
 
                 if (*text == '\'' || *text == '\"') {
                     const auto quote = text++;
-                    auto b = skip_unicode_body<Options>(text, end, [q = (*quote)](unsigned char c) { return c != q; });
+                    auto b = skip_unicode_body<Options>(text, end, [q = (*quote)](auto c) { return c != q; });
                     if (*text != *quote)
                         parsing_error("expected \' or \"", text);
                     node.attributes[attribute_name] = view_t{ quote + 1, static_cast<size_t>(b - quote - 1) };

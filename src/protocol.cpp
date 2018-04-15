@@ -1061,13 +1061,3 @@ inline void GetTimeGMT(char * dest, size_t buffSize, const char * _format, bool 
 		gmt = *gmtime(&now);
 	strftime(dest, buffSize, _format, &gmt);
 }
-
-Protocol::Session::Session(const std::string & _Name) : username(_Name), last_activity(time(nullptr)), character(nullptr)
-{
-}
-
-Protocol::Session::~Session(void)
-{
-	if (character != nullptr)
-		delete character;
-}

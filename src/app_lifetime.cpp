@@ -217,8 +217,6 @@ int ApplicationLifetime(const Application &app)
 #endif
 	(Protocol::dir_work = "werk/").shrink_to_fit();
 
-	puts("Starting ~");
-
 	for (auto& s : app.stack) {
 		ls.emplace_back(s, Violet::ListeningSocket());
 	}
@@ -244,13 +242,15 @@ int ApplicationLifetime(const Application &app)
 	for (auto &l : ls)
 		if (!l.second.is_listening())
 		{
-			printf("One or more sockets aren't working.");
+			puts("One or more sockets aren't working.");
 			ConsoleHandlerRoutine(0);
 			return 0;
 		}
 	
-
-	printf("HTTP ready to go! [time_t = %zu]\n", sizeof(time_t) * 8);
+	puts("HTTP is ready!");
+	if constexpr (sizeof(time_t) < 8) {
+		printf("WARNING: time_t is only %zu bits long\n", sizeof(time_t) * 8);
+	}
 	
 	if (app.daemon) {
 		pid_t pid, sid;
@@ -314,15 +314,31 @@ template<class Str>
 void print_tags(std::FILE* stream, const std::vector<Str> &v) {
 	bool append = false;
 	for (auto &&it : v) {
-		if (append)
+		if (append) {
+			//std::putc(',', stream);
 			std::putc(' ', stream);
-		else
-			append = true;
+		}
+		else append = true;
+
 		std::putc('\"', stream);
-		for (auto c : it)
+		for (auto c : it) {
 			std::putc(c, stream);
+		}
 		std::putc('\"', stream);
 	}
+}
+
+template<class Str>
+Str & remove_last_char(Str & str, const typename Str::value_type c) {
+	if (!!str.length() && str.back() == c) {
+		if constexpr (Violet::is_view<Str>::value) {
+			str.remove_suffix(1);
+		}
+		else {
+			str.resize(str.size() - 1);
+		}
+	}
+	return str;
 }
 
 void Application::CheckConfigFile(const char *filename) {
@@ -348,9 +364,9 @@ void Application::CheckConfigFile(const char *filename) {
 				const bool is_name = !is_punct(l.front());
 				if (!is_name && (l.front() == '\'' || l.front() == '\"')) {
 					len = l.find(l.front(), 1);
-					if (len > 1)
-						tags.emplace_back(l.substr(1, len - 2));
-					l.remove_prefix(std::min(len, l.length()));
+					if (len > 0)
+						tags.emplace_back(l.substr(1, len - 1));
+					l.remove_prefix(std::min(len + 1, l.length()));
 					Violet::remove_prefix_whitespace(l);
 				}
 				else {
@@ -385,17 +401,19 @@ void Application::CheckConfigFile(const char *filename) {
 			if (stack.empty()) {
 				return;
 			}
-			if (tags.size() != 3 || tags[1] != "=") {
+			if ((tags.size() != 3 && (tags.size() != 4 || !is_punct(tags[3].front()))) || tags[1] != "=") {
 				puts("Configuration error at:");
 				print_tags(stdout, tags);
-				puts("\nCorrect syntax is\n<variable_name> = <value>");
+				puts("\nCorrect syntax is\n<variable_name> = <string_value>[;]");
 				std::exit(EXIT_FAILURE);
 			}
 
-			if (tags[0] == "AccessDir")
-				stack.back().dir = static_cast<std::string>(tags[2]);
-			else if (tags[0] == "MetaDir")
-				stack.back().dir_meta = static_cast<std::string>(tags[2]);
+			if (tags[0] == "AccessDir") {
+				stack.back().dir.assign(remove_last_char(tags[2], '/'));
+			}
+			else if (tags[0] == "MetaDir") {
+				stack.back().dir_meta.assign(remove_last_char(tags[2], '/'));
+			}
 			else if (tags[0] == "SSL") {
 #ifndef VIOLET_SOCKET_USE_OPENSSL
 				puts("WARNING: Application has been built without SSL support");
