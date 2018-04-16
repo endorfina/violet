@@ -39,7 +39,7 @@ void Protocol::Hi::Clear()
 	get.clear();
 	post.clear();
 	cookie.clear();
-	clipboard.clear();
+	//clipboard.clear();
 	file.clear();
 
 	table.clear();

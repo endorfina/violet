@@ -45,7 +45,7 @@ add_executable(violet
             pch.h
             main.cpp
             app_lifetime.cpp
-            curly_tags.cpp
+            lovely_tags.cpp
             protocol.cpp
             ht.cpp
             captcha_image_generator.cpp

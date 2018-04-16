@@ -19,6 +19,7 @@
 
 #pragma once
 #include <random>
+#include <optional>
 
 namespace Violet
 {
@@ -148,6 +149,74 @@ namespace Violet
         return __ret;
     }
 
+    template<class Iter>
+    constexpr inline Iter __find_unicode(Iter p, const size_t n, const unsigned cp)
+    {
+        const auto e = p + n;
+        while (p < e) {
+            const auto len = Violet::internal::utf8x::sequence_length(p);
+            if (len < 1 || len > 4 || p + len >= e)
+                return nullptr;
+            if (Violet::internal::utf8x::get_switch(p, len) == cp)
+                return p;
+            p += len;
+        }
+        return nullptr;
+    }
+
+    template<class Str>
+    constexpr std::optional<size_t> find_unicode(const Str &__s, const unsigned __c, const size_t __pos = 0)
+    {
+        const size_t __size = __s.size();
+        if (__pos < __size)
+        {
+            const auto __data = __s.data();
+            const size_t __n = __size - __pos;
+            const auto __p = __find_unicode(__data + __pos, __n, __c);
+            if (__p)
+                return __p - __data;
+        }
+        return {};
+    }
+
+    template<class Iter, class A, typename = std::enable_if_t<!std::is_arithmetic_v<A>>>
+    constexpr inline Iter __find_unicode_array(Iter p, const size_t n, const A &cp)
+    {
+        using value_type = std::decay_t<decltype(cp[0])>;
+        static_assert(std::is_arithmetic_v<value_type> || std::is_enum_v<value_type>);
+        const auto e = p + n;
+        unsigned min_len = 4;
+        for (value_type a : cp)
+            min_len = std::min<unsigned>(min_len, internal::utf8x::code_length(a));
+        while (p < e) {
+            const auto len = Violet::internal::utf8x::sequence_length(p);
+            if (len < 1 || len > 4 || p + len >= e)
+                return nullptr;
+            if (len >= min_len) {
+                const auto val = Violet::internal::utf8x::get_switch(p, len);
+                for (value_type a : cp)
+                    if (val == a)
+                        return p;
+            }
+            p += len;
+        }
+        return nullptr;
+    }
+
+    template<class Str, class N, typename = std::enable_if_t<!std::is_arithmetic_v<N>>>
+    constexpr std::optional<size_t> find_unicode_array(const Str &__s, N &&__c, const size_t __pos = 0)
+    {
+        const size_t __size = __s.size();
+        if (__pos < __size)
+        {
+            const auto __data = __s.data();
+            const auto __p = __find_unicode_array(__data + __pos, __size - __pos, std::forward<N>(__c));
+            if (__p)
+                return __p - __data;
+        }
+        return {};
+    }
+
     template<typename A>
     constexpr void remove_prefix_whitespace(std::basic_string_view<A> &_sv) {
         while (!!_sv.length() && !!std::isspace(static_cast<unsigned char>(_sv.front())))
@@ -178,4 +247,92 @@ namespace Violet
         std::minstd_rand gen{ dev() };
         generate_random_string(std::move(gen), str, len);
     }
+
+    template<typename A>
+    class UnicodeKeeper {
+        using view_t = std::basic_string_view<A>;
+        using int_t = unsigned int;
+
+        view_t _data;
+        size_t _pos = 0;
+        unsigned _len = 1;
+
+        void __get_length(void) {
+            _len = is_at_end() ? 0
+                : internal::utf8x::sequence_length(&_data[_pos]);
+            if (_len > 4 || _pos + _len > _data.size()) // Invalid sequence
+                _len = 0;
+        }
+
+        inline void __iterate(void) { _pos += _len; __get_length(); }
+
+    public:
+
+        UnicodeKeeper() = default;
+        UnicodeKeeper(const UnicodeKeeper &) = default;
+        UnicodeKeeper(UnicodeKeeper &&) = default;
+        UnicodeKeeper &operator=(const UnicodeKeeper &) = default;
+        UnicodeKeeper &operator=(UnicodeKeeper &&) = default;
+
+        UnicodeKeeper(const view_t &_sv) : _data(_sv), _pos(0), _len(1) { skip_potential_bom(_data); __get_length(); }
+        UnicodeKeeper &operator=(const view_t &_sv) { _data = _sv; skip_potential_bom(_data); _pos = 0; _len = 1; __get_length(); return *this; }
+
+        inline bool is_at_end() const { return _len == 0 || _pos >= _data.size(); }
+        inline int_t get() const { return is_at_end() ? 0x0 : internal::utf8x::get_switch(&_data[_pos], _len); }
+        int_t get_and_iterate() { int_t i = get(); __iterate(); return i; }
+        inline operator int_t() const { return get(); }
+        inline auto get_pos() const { return _pos; }
+        inline auto get_len() const { return _len; }
+        inline void set_pos(size_t _p) { _pos = _p; __get_length(); }
+        inline auto substr() { return _data.substr(_pos); }
+        inline auto substr(size_t p, size_t s = view_t::npos) { return _data.substr(p, s); }
+        inline auto size() const { return _data.size(); }
+
+        inline auto operator*() const { return get(); }
+
+        inline UnicodeKeeper &operator++() {
+            __iterate();
+            return *this;
+        }
+
+        inline UnicodeKeeper operator++(int) {
+            UnicodeKeeper copy{*this};
+            this->__iterate();
+            return copy;
+        }
+        
+        inline auto find_and_iterate(unsigned a) {
+            const auto f = find_unicode(_data, a, _pos);
+            _pos = f.has_value() ? *f : _data.size();
+            __get_length();
+            return _pos;
+        }
+
+        template<class N>
+        inline auto find_and_iterate_array(N&&a) {
+            const auto f = find_unicode_array(_data, std::forward<N>(a), _pos);
+            _pos = f.has_value() ? *f : _data.size();
+            __get_length();
+            return _pos;
+        }
+
+        template<class Predicate>
+        void skip_all(Predicate&&p) {
+            while(!is_at_end() && p(get()))
+                __iterate();
+        }
+
+        template<class Predicate>
+        auto pop_substr_until(Predicate&&p) {
+            const auto i = _pos;
+            while(!is_at_end() && !p(get()))
+                __iterate();
+            return _data.substr(i, _pos - i);
+        }
+
+        void skip_whitespace(void) {
+            while(!is_at_end() && _len == 1 && !!std::isspace(static_cast<unsigned char>(_data[_pos])))
+                __iterate();
+        }
+    };
 }

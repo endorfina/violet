@@ -57,6 +57,8 @@ std::string ReadUntilSpace(const std::string &src, size_t pos = 0, const char tr
 
 struct Protocol {
 
+	struct Callback;
+
 	struct Session {
 		std::string username, email;
 		time_t last_activity;
@@ -87,7 +89,7 @@ struct Protocol {
 		method = Method::Error;
 
 		using map_t = std::map<std::string, std::string, Violet::functor_less_comparator>;
-		map_t get, post, cookie, clipboard;
+		map_t get, post, cookie; //, clipboard;
 
 		struct _F {
 			std::string name, filename, mime_type;
@@ -129,9 +131,7 @@ struct Protocol {
 				return get;
 			else if (_name == "cookie"sv)
 				return cookie;
-			else if (_name == "clipboard"sv || _name == "cb"sv)
-				return clipboard;
-			throw violet_exception::wrong_enum;
+			throw "Null query"sv;
 		}
 	};
 
@@ -179,8 +179,8 @@ public:
 		std::list<std::pair<Captcha::Signature, time_t>> captcha_sig;
 		std::string_view var_copyright;
 
-		Shared(const char * access, const char * accounts)
-			: dir_accessible(access), dir_accounts(accounts) {}
+		Shared(const char * _access, const char * _accounts, std::string_view _cpr)
+			: dir_accessible(_access), dir_accounts(_accounts), var_copyright{_cpr} {}
 	};
 
 	Shared &shared;

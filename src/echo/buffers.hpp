@@ -262,7 +262,7 @@ namespace Violet
 			}
 
 			template <typename CharIt>
-			constexpr inline unsigned char sequence_length(CharIt it)
+			constexpr inline unsigned short sequence_length(CharIt it)
 			{
 				const auto byte = static_cast<uint8_t>(*it);
 				// 0xxxxxxx
@@ -450,7 +450,7 @@ namespace Violet
 			}
 
 			/* In accordance with the previous function */
-			constexpr inline unsigned char code_length(const uint32_t code) {
+			constexpr inline unsigned short code_length(const uint32_t code) {
 				if (code < 0x80)
 					return 1;
 				else if (code < 0x800)

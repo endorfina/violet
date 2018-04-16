@@ -126,7 +126,8 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l
 	std::list<Protocol> http;
 	Protocol::Shared shared_registry {
 		l.first.dir.size() ? l.first.dir.c_str() : nullptr,
-		l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr
+		l.first.dir_meta.size() ? l.first.dir_meta.c_str() : nullptr,
+		l.first.copyright
 	};
 	unsigned int tick = 0;
 	bool block = true;
@@ -413,6 +414,9 @@ void Application::CheckConfigFile(const char *filename) {
 			}
 			else if (tags[0] == "MetaDir") {
 				stack.back().dir_meta.assign(remove_last_char(tags[2], '/'));
+			}
+			else if (tags[0] == "CopyrightNotice") {
+				stack.back().copyright.assign(tags[2]);
 			}
 			else if (tags[0] == "SSL") {
 #ifndef VIOLET_SOCKET_USE_OPENSSL
