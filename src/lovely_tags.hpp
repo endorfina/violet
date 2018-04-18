@@ -38,7 +38,8 @@ namespace Lovely
 		Custard = 0x1F36E,
 		WrappedGift = 0x1F381,
 		Scroll = 0x1F4DC,
-		GrinningFace = 0x1F600
+		GrinningFace = 0x1F600,
+		ChequeredFlag = 0x1F3C1
 	};
 	enum class Operator { none, equality, lessthan, greaterthan };
 
@@ -77,7 +78,7 @@ namespace Lovely
 		return (c >= '!' && c <= '~' && c != '=' && c != ',' && c != ':' && c != '(' && c != ')' && c != '{' && c != '}');
 	}
 
-	Candy parse(Violet::UnicodeKeeper<char> &_uc);
+	Candy parse(Violet::utf8x::translator<char> &_uc);
 }
 
 //bool cik_strcmp(const char * s, const char * k);

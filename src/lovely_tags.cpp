@@ -94,13 +94,13 @@ inline T __split(std::string_view &_l) {
 	else {
 		len = 1;
 		if (is_name) {
-			size_t s = Violet::internal::utf8x::sequence_length(_l.data());
+			size_t s = Violet::utf8x::sequence_length(_l.data());
 			if (s == 1)
-				for(;len < _l.length() && Violet::internal::utf8x::sequence_length(_l.data() + len) == 1 && !_is_punct_lv(_l[len]) && !std::isspace(static_cast<unsigned char>(_l[len])); ++len);
+				for(;len < _l.length() && Violet::utf8x::sequence_length(_l.data() + len) == 1 && !_is_punct_lv(_l[len]) && !std::isspace(static_cast<unsigned char>(_l[len])); ++len);
 			else if (s <= _l.length()) {
-				//for(len = s; len < _l.length() && (s = Violet::internal::utf8x::sequence_length(_l.data() + len)) > 1 && len + s <= _l.length(); len += s);
+				//for(len = s; len < _l.length() && (s = Violet::utf8x::sequence_length(_l.data() + len)) > 1 && len + s <= _l.length(); len += s);
 				if constexpr (!std::is_same_v<T, std::string_view>) {
-					out = Violet::internal::utf8x::get_switch(_l.data(), s);
+					out = Violet::utf8x::get_switch(_l.data(), s);
 					_l.remove_prefix(s);
 					Violet::remove_prefix_whitespace(_l);
 					return out;
@@ -169,8 +169,8 @@ void print_tags_2(std::FILE* stream, const std::vector<Str> &v) {
 	fprintf(stream, "\n");
 }
 
-HeartFunction parse_function(Violet::UnicodeKeeper<char> &uc) {
-	Violet::UnicodeKeeper<char> uc_copy{ uc };
+HeartFunction parse_function(Violet::utf8x::translator<char> &uc) {
+	Violet::utf8x::translator<char> uc_copy{ uc };
 	uc_copy.skip_whitespace();
 	if (auto str = uc_copy.pop_substr_until([](unsigned c) { return c == '\n' || c == Codepoints::RedHeart || c == Codepoints::SuitHeart; }); str.size() > 0 ) {
 		auto [key, tags] = split2(str);
@@ -201,7 +201,7 @@ HeartFunction parse_function(Violet::UnicodeKeeper<char> &uc) {
 	return { Function::Unknown };
 }
 
-Candy Lovely::parse(Violet::UnicodeKeeper<char> &uc)
+Candy Lovely::parse(Violet::utf8x::translator<char> &uc)
 {
 	const auto main = uc.get_and_iterate();
 	while (!uc.is_at_end() && uc == 0xfe0f)
@@ -247,9 +247,9 @@ Candy Lovely::parse(Violet::UnicodeKeeper<char> &uc)
 			if (tags.size() == 3 + shift) {
 				if (const auto o = ops.find(tags[1 + shift]); o != ops.end()) {
 					tb.op = o->second;
-					if (tags[2 + shift].size() > 0 && std::isdigit(static_cast<unsigned char>(tags[2 + shift].front()))) {
-						std::string __t{ tags[2 + shift] };
-						tb.comp_val = std::stol(__t, nullptr, 0);
+					long il;
+					if (tags[2 + shift].size() > 0 && Violet::svtonum(tags[2 + shift], il, 0) < tags[2 + shift].size()) {
+						tb.comp_val = il;
 					}
 					else tb.comp_val = tags[2 + shift];
 				}

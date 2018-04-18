@@ -161,7 +161,7 @@ namespace Violet::badhtml
     template<class Iterator, class SingleByteStopCondition> // For simplicity, multiple bytes cannot function as delimiters
     uint32_t uskip(Iterator &a, const Iterator e, SingleByteStopCondition p)
     {
-        using namespace Violet::internal::utf8x;
+        using namespace Violet::utf8x;
         while (a != e) {
             auto len = sequence_length(a);
             if (len < 1 || len > 4)
@@ -581,7 +581,7 @@ namespace Violet::badhtml
                                         if (code > 0x10ffff)
                                             parsing_error("Invalid unicode", src);
                                         else
-                                            Violet::internal::utf8x::put(translate, code);
+                                            Violet::utf8x::put(translate, code);
                                     }
                                     else
                                     {
@@ -603,7 +603,7 @@ namespace Violet::badhtml
                                         if (code > 0x10ffff)
                                             parsing_error("Invalid unicode", src);
                                         else
-                                            Violet::internal::utf8x::put(translate, code);
+                                            Violet::utf8x::put(translate, code);
                                     }
                                     if (*src == ';')
                                         ++src;
@@ -730,7 +730,7 @@ namespace Violet::badhtml
         // {
         //     while (*src)
         //     {
-        //         const auto len = Violet::internal::utf8x::sequence_length(src);
+        //         const auto len = Violet::utf8x::sequence_length(src);
         //         // if (c == 0xd) {
         //         //     *dest++ = 0xa;
         //         //     if(*++src == 0xa)
@@ -738,7 +738,7 @@ namespace Violet::badhtml
         //         // }
         //         if (len < 1 || len > 4)
         //             parsing_error("Forbidden unicode codepoint found", src);
-        //         if (is_html_forbidden(Violet::internal::utf8x::get_switch(src, len)))
+        //         if (is_html_forbidden(Violet::utf8x::get_switch(src, len)))
         //             parsing_error("Forbidden unicode codepoint found", src);
         //         src += len;
         //     }

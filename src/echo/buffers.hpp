@@ -33,77 +33,14 @@
 #include <zlib.h>
 #endif
 
+#include "type.hpp"
+
+#ifndef VIOLET_NO_COMPILE_BUFFER_UTF8
+#include "utf8.hpp"
+#endif
+
 namespace Violet
 {
-	template<typename A>
-	constexpr void skip_whitespaces(A *s, const size_t size, size_t &it) {
-		for (; it < size && !!s[it] && !!std::isspace(static_cast<unsigned char>(s[it])); ++it);
-	}
-
-	template<class S>
-	constexpr void skip_whitespaces(S&&s, size_t &it) {
-		for (; it < s.size() && !!s[it] && !!std::isspace(static_cast<unsigned char>(s[it])); ++it);
-	}
-
-	template<class S>
-	constexpr void skip_whitespaces(S &it, const S end) {
-		while(it != end && *it <= 0x20)
-			++it;
-	}
-
-	constexpr int __cis_compare(const std::string_view &lhs, const std::string_view &rhs) {
-		const auto __s = std::min(lhs.size(), rhs.size());
-		int __ret = 0;
-		for (std::remove_const_t<decltype(__s)> i = 0; i < __s; ++i)
-			if (const auto cl = ::tolower(lhs[i]), cr = ::tolower(rhs[i]);
-				cl < cr) {
-				__ret = -1;
-				break;
-			}
-			else if (cl > cr) {
-				__ret = 1;
-				break;
-			}
-		if (__ret == 0) {
-			if (lhs.size() < rhs.size())
-			__ret = -1;
-			else if (lhs.size() > rhs.size())
-			__ret = 1;
-		}
-		return __ret;
-	}
-
-	struct functor_less_comparator {
-		bool operator()(const std::string &lhs, const std::string &rhs) const {
-			return lhs < rhs;
-		}
-		bool operator()(const std::string_view &lhs, const std::string_view &rhs) const {
-			return lhs < rhs;
-		}
-		using is_transparent = void;
-	};
-	struct functor_equal_comparator {
-		bool operator()(const std::string &lhs, const std::string &rhs) const {
-			return lhs == rhs;
-		}
-		bool operator()(const std::string_view &lhs, const std::string_view &rhs) const {
-			return lhs == rhs;
-		}
-		using is_transparent = void;
-	};
-	struct cis_functor_equal_comparator {
-		bool operator()(std::string_view lhs, std::string_view rhs) const {
-			return __cis_compare(lhs, rhs) == 0;
-		}
-		using is_transparent = void;
-	};
-	struct cis_functor_less_comparator {
-		bool operator()(std::string_view lhs, std::string_view rhs) const {
-			return __cis_compare(lhs, rhs) < 0;
-		}
-		using is_transparent = void;
-	};
-
 	namespace internal
 	{
 		/* Returns true on success */
@@ -249,223 +186,6 @@ namespace Violet
 			return out;
 		}
 #endif
-
-		namespace utf8x {
-			template <typename Char>
-			constexpr inline auto scoop(Char c) {
-				return static_cast<uint8_t>(c) & 0x3f; // Scoop dat 10xxxxxx, yo
-			}
-
-			template <typename Char>
-			constexpr inline bool check(Char c) {
-				return static_cast<uint8_t>(c) >> 6 == 0x2;
-			}
-
-			template <typename CharIt>
-			constexpr inline unsigned short sequence_length(CharIt it)
-			{
-				const auto byte = static_cast<uint8_t>(*it);
-				// 0xxxxxxx
-				if (byte < 0x80) return 1;
-				// 110xxxxx
-				else if ((byte >> 5) == 0x6) return 2;
-				// 1110xxxx
-				else if ((byte >> 4) == 0xe) return 3;
-				// 11110xxx
-				else if ((byte >> 3) == 0x1e) return 4;
-				// 111110xx
-				else if ((byte >> 2) == 0x3e) return 5;
-				// 1111110x
-				else if ((byte >> 1) == 0x7e) return 6;
-				return 0; // It ain't no utf8, fren. what do?
-			}
-
-			template <typename CharIt>
-			constexpr inline uint32_t get_2(CharIt it) // Can be inlined?
-			{
-				if (check(it[1]))
-					return ((static_cast<uint32_t>(*it) & 0x1f) << 6) + scoop(it[1]);
-				return 0x0;
-			}
-
-			template <typename CharIt>
-			constexpr uint32_t get_3(CharIt it)
-			{
-				uint32_t code_point = static_cast<uint32_t>(*it) & 0xf;
-				if (check(it[1]) && check(it[2])) {
-					code_point = (code_point << 12) + (scoop(*++it) << 6);
-					code_point += scoop(*++it);
-				}
-				return code_point;
-			}
-
-			template <typename CharIt>
-			constexpr uint32_t get_4(CharIt it)
-			{
-				uint32_t code_point = static_cast<uint32_t>(*it) & 0x7;
-				if (check(it[1]) && check(it[2]) && check(it[3])) {
-					code_point = (code_point << 18) + (scoop(*++it) << 12);
-					code_point += scoop(*++it) << 6;
-					code_point += scoop(*++it);
-				}
-				return code_point;
-			}
-
-			/* 5 and 6 byte encoding are an extension of the standard */
-			template <typename CharIt>
-			constexpr uint32_t get_5(CharIt it)
-			{
-				uint32_t code_point = static_cast<uint32_t>(*it) & 0x3;
-				if (check(it[1]) && check(it[2]) && check(it[3]) && check(it[4])) {
-					code_point = (code_point << 24) + (scoop(*++it) << 18);
-					code_point += scoop(*++it) << 12;
-					code_point += scoop(*++it) << 6;
-					code_point += scoop(*++it);
-				}
-				return code_point;
-			}
-
-			template <typename CharIt>
-			constexpr uint32_t get_6(CharIt it)
-			{
-				uint32_t code_point = static_cast<uint32_t>(*it) & 0x1;
-				if (check(it[1]) && check(it[2]) && check(it[3]) && check(it[4]) && check(it[5])) {
-					code_point = (code_point << 30) + (scoop(*++it) << 24);
-					code_point += scoop(*++it) << 18;
-					code_point += scoop(*++it) << 12;
-					code_point += scoop(*++it) << 6;
-					code_point += scoop(*++it);
-				}
-				return code_point;
-			}
-
-			template <typename CharIt>
-			constexpr inline uint32_t get_switch(CharIt it, unsigned size)
-			{
-				switch(size) {
-					case 1:
-						return static_cast<uint8_t>(*it);
-					case 2:
-						return internal::utf8x::get_2(it);
-					case 3:
-						return internal::utf8x::get_3(it);
-					case 4:
-						return internal::utf8x::get_4(it);
-					case 5:
-						return internal::utf8x::get_5(it);
-					case 6:
-						return internal::utf8x::get_6(it);
-					default:
-						//assert(false); // perhaps throw an error
-						return 0;
-				}
-			}
-
-			/* WARNING: May overflow, check sequence length first */
-			template <typename CharIt>
-			constexpr CharIt put(CharIt it,  uint32_t code)
-			{
-				if (code < 0x80)
-					*it++ = static_cast<uint8_t>(code);
-				else if (code < 0x800) {
-					*it++ = static_cast<uint8_t>(code >> 6) | 0xc0;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-				}
-				else if (code < 0x10000) {
-					*it++ = static_cast<uint8_t>(code >> 12) | 0xe0;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-				}
-				else if (code < 0x200000) { // Should end at 0x110000 according to the RFC 3629
-					*it++ = static_cast<uint8_t>(code >> 18) | 0xf0;
-					*it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-				}
-				else if (code < 0x4000000) {
-					*it++ = static_cast<uint8_t>(code >> 24) | 0xf8;
-					*it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-				}
-				else if (code < 0x80000000) {
-					*it++ = static_cast<uint8_t>(code >> 30) | 0xfc;
-					*it++ = static_cast<uint8_t>(code >> 24) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-				}
-				//else return put(it, 0xfffd); // The replacement character?
-				// rather, don't write anything
-				return it;
-			}
-
-			template <typename CharIt>
-			constexpr CharIt put_switch(CharIt it, const unsigned size, uint32_t code)
-			{
-				switch(size)
-				{
-				case 1:
-					*it++ = static_cast<uint8_t>(code);
-					break;
-					
-				case 2:
-					*it++ = static_cast<uint8_t>(code >> 6) | 0xc0;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-					break;
-					
-				case 3:
-					*it++ = static_cast<uint8_t>(code >> 12) | 0xe0;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-					break;
-					
-				case 4:
-					*it++ = static_cast<uint8_t>(code >> 18) | 0xf0;
-					*it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-					break;
-					
-				case 5:
-					*it++ = static_cast<uint8_t>(code >> 24) | 0xf8;
-					*it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-					break;
-					
-				case 6:
-					*it++ = static_cast<uint8_t>(code >> 30) | 0xfc;
-					*it++ = static_cast<uint8_t>(code >> 24) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-					*it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
-					break;
-				}
-				return it;
-			}
-
-			/* In accordance with the previous function */
-			constexpr inline unsigned short code_length(const uint32_t code) {
-				if (code < 0x80)
-					return 1;
-				else if (code < 0x800)
-					return 2;
-				else if (code < 0x10000)
-					return 3;
-				else if (code < 0x200000)
-					return 4;
-				else if (code < 0x4000000)
-					return 5;
-				else if (code < 0x80000000)
-					return 6;
-				return 0;
-			}
-		}
 	}
 
 	template<class Container = std::vector<char>,
@@ -617,10 +337,10 @@ namespace Violet
 			if (is_at_end()) {
 				throw Error::BadFormat;
 			}
-			else if (const size_t s = internal::utf8x::sequence_length(&mData[mPos]); mPos + s <= mData.size()) {
+			else if (const size_t s = utf8x::sequence_length(&mData[mPos]); mPos + s <= mData.size()) {
 				const auto p = &mData[mPos];
 				mPos += s;
-				internal::utf8x::get_switch(p, s);
+				utf8x::get_switch(p, s);
 			}
 			else if(mPos + 1 > mData.size()) {
 				throw Error::BadFormat;
@@ -629,16 +349,16 @@ namespace Violet
 		}
 
 		void write_utfx(uint32_t x) {
-			const size_t s = internal::utf8x::code_length(x), p = mData.size();
+			const size_t s = utf8x::code_length(x), p = mData.size();
 			mData.resize(p + s);
 			if (x > 0x7fffffff) {
 				x = 0x7fffffff; // TODO: This is really unsafe
 			}
-			internal::utf8x::put_switch(&mData[p], s, x);
+			utf8x::put_switch(&mData[p], s, x);
 		}
 
 		int32_t read_utfxs() {
-			uint32_t b = internal::utf8x::sequence_length(&mData[mPos]);
+			uint32_t b = utf8x::sequence_length(&mData[mPos]);
 			b = 1 << (b < 2 ? 6 : 10 + (b - 2) * 5);
 			const uint32_t u = read_utfx();
 			// check the most significant bit
@@ -652,7 +372,7 @@ namespace Violet
 			uint32_t b, u = static_cast<uint32_t>(x);
 			if (x < 0)
 				u ^= uint32_t(-1);
-			b = internal::utf8x::code_length(u << 1);
+			b = utf8x::code_length(u << 1);
 			mData.resize(p + b);
 			b = 1 << (b < 2 ? 6 : 10 + (b - 2) * 5);
 			if (x < 0 && !(u & b))

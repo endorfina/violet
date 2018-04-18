@@ -23,52 +23,141 @@
 
 namespace Violet
 {
-    template<typename T, typename = void>
-    struct is_view : std::false_type {};
+	template<typename A>
+	constexpr void skip_whitespaces(A *s, const size_t size, size_t &it) {
+		for (; it < size && !!s[it] && !!std::isspace(static_cast<unsigned char>(s[it])); ++it);
+	}
 
-    template<typename... Ts>
-    struct is_view_helper {};
+	template<class S>
+	constexpr void skip_whitespaces(S&&s, size_t &it) {
+		for (; it < s.size() && !!s[it] && !!std::isspace(static_cast<unsigned char>(s[it])); ++it);
+	}
 
-    template<typename T>
-    struct is_view<
-            T,
-            std::conditional_t<
-                false,
-                is_view_helper<
-                    typename T::size_type,
-                    decltype(std::declval<T>().size()),
-                    decltype(std::declval<T>().begin()),
-                    decltype(std::declval<T>().end()),
-                    decltype(std::declval<T>().remove_prefix(0)),
-                    decltype(std::declval<T>().remove_suffix(0))
-                    >,
-                void
-                >
-            > : public std::true_type {};
+	template<class S>
+	constexpr void skip_whitespaces(S &it, const S end) {
+		while(it != end && *it <= 0x20)
+			++it;
+	}
 
-    template<typename A>
-    constexpr void skip_potential_bom(A &text)
+	constexpr int __cis_compare(const std::string_view &lhs, const std::string_view &rhs) {
+		const auto __s = std::min(lhs.size(), rhs.size());
+		int __ret = 0;
+		for (std::remove_const_t<decltype(__s)> i = 0; i < __s; ++i)
+			if (const auto cl = ::tolower(lhs[i]), cr = ::tolower(rhs[i]);
+				cl < cr) {
+				__ret = -1;
+				break;
+			}
+			else if (cl > cr) {
+				__ret = 1;
+				break;
+			}
+		if (__ret == 0) {
+			if (lhs.size() < rhs.size())
+			__ret = -1;
+			else if (lhs.size() > rhs.size())
+			__ret = 1;
+		}
+		return __ret;
+	}
+
+	struct functor_less_comparator {
+		bool operator()(const std::string &lhs, const std::string &rhs) const {
+			return lhs < rhs;
+		}
+		bool operator()(const std::string_view &lhs, const std::string_view &rhs) const {
+			return lhs < rhs;
+		}
+		using is_transparent = void;
+	};
+	struct functor_equal_comparator {
+		bool operator()(const std::string &lhs, const std::string &rhs) const {
+			return lhs == rhs;
+		}
+		bool operator()(const std::string_view &lhs, const std::string_view &rhs) const {
+			return lhs == rhs;
+		}
+		using is_transparent = void;
+	};
+	struct cis_functor_equal_comparator {
+		bool operator()(std::string_view lhs, std::string_view rhs) const {
+			return __cis_compare(lhs, rhs) == 0;
+		}
+		using is_transparent = void;
+	};
+	struct cis_functor_less_comparator {
+		bool operator()(std::string_view lhs, std::string_view rhs) const {
+			return __cis_compare(lhs, rhs) < 0;
+		}
+		using is_transparent = void;
+	};
+    
+    template<typename Char>
+    constexpr inline bool __char_varbase_check(const Char a, const unsigned int base) {
+        return base > 10
+            ? (a < 'A' ? a <= '9' && a >= '0' : a < (base - 10) + (a < 'a' ? 'A' : 'a'))
+            : a >= '0' && a < ('0' + base);
+    }
+
+    template<typename Char>
+    constexpr inline int __char_varbase_unsafe(const Char a, const unsigned int base) {   // character has to be checked beforehand
+        return base > 10 && a > Char('9')
+            ? (a < Char('a') ? a - Char('A') : a - Char('a')) + 10
+            : a - Char('0');
+    }
+
+    template<typename A, class View, typename = std::enable_if_t<std::is_arithmetic_v<A>>>
+    constexpr ptrdiff_t svtonum(View&&v, A &out, unsigned int base = 0) noexcept
     {
-        const unsigned char * check = nullptr;
-        if constexpr (is_view<A>::value) {
-            static_assert(sizeof(typename A::value_type) == 1);
-            if (text.size() < 3)
-                return;
-            check = reinterpret_cast<const unsigned char *>(text.data());
+        [[maybe_unused]] std::conditional_t<std::is_signed_v<A>, bool, const bool> is_negative = false;
+        auto d = v.data();
+        const auto e = d + v.size();
+
+        assert(base != 1 && base < (10 + ('z' - 'a')) && base >= 0);
+
+        while (d != e && !!std::isspace(static_cast<unsigned char>(*d))) ++d;
+
+        if constexpr (std::is_signed_v<A>) {
+            if (d != e && *d == '-') {
+                is_negative = true;
+                while (++d != e && !!std::isspace(static_cast<unsigned char>(*d)));
+            }
         }
-        else {
-            static_assert(sizeof(std::decay_t<decltype(*text)>) == 1);
-            check = (const unsigned char *)&(*text);    // should take care of pointers and iterators
+        
+        if (base == 0) {
+            if (d == e || !std::isdigit(static_cast<unsigned char>(*d)))
+                return v.size();
+            if (*d == '0') {
+                if (++d == e) {
+                    out = 0;
+                    return 0;
+                }
+                if (*d == 'x') {
+                    base = 16;
+                    ++d;
+                }
+                else if (!!std::isdigit(static_cast<unsigned char>(*d)))
+                    base = 8;
+                else
+                    base = 10;
+            }
+            else base = 10;
         }
-        for (unsigned char bom : { 0xef, 0xbb, 0xbf })
-            if (bom != *check++)
-                return;
-        if constexpr (is_view<A>::value) {
-            text.remove_prefix(3);
+        else if (base == 16 && d + 1 != e && *d == '0' && *(d + 1) == 'x')
+            d += 2;
+        
+        if (d == e || !__char_varbase_check(*d, base))
+            return v.size();
+        out = __char_varbase_unsafe(*d++, base);
+        while (d != e && __char_varbase_check(*d, base)) {
+            out *= base;
+            out += __char_varbase_unsafe(*d++, base);
         }
-        else {
-            text += 3;
+        if constexpr (std::is_signed_v<A>) {
+            if (is_negative)
+                out *= -1;
         }
+        return e - d;
     }
 
     template<typename A>
@@ -84,7 +173,7 @@ namespace Violet
     {
         const auto e = p + n;
         while (p < e) {
-            const auto len = Violet::internal::utf8x::sequence_length(p);
+            const auto len = Violet::utf8x::sequence_length(p);
             if (len > 1 && len <= 4) {
                 p += len;
                 continue;
@@ -101,7 +190,7 @@ namespace Violet
     {	
         const auto e = p + n;
         while (p < e) {
-            const auto len = Violet::internal::utf8x::sequence_length(p);
+            const auto len = Violet::utf8x::sequence_length(p);
             const auto q = *p;
             if (len > 1 && len <= 4) {
                 p += len;
@@ -149,74 +238,6 @@ namespace Violet
         return __ret;
     }
 
-    template<class Iter>
-    constexpr inline Iter __find_unicode(Iter p, const size_t n, const unsigned cp)
-    {
-        const auto e = p + n;
-        while (p < e) {
-            const auto len = Violet::internal::utf8x::sequence_length(p);
-            if (len < 1 || len > 4 || p + len >= e)
-                return nullptr;
-            if (Violet::internal::utf8x::get_switch(p, len) == cp)
-                return p;
-            p += len;
-        }
-        return nullptr;
-    }
-
-    template<class Str>
-    constexpr std::optional<size_t> find_unicode(const Str &__s, const unsigned __c, const size_t __pos = 0)
-    {
-        const size_t __size = __s.size();
-        if (__pos < __size)
-        {
-            const auto __data = __s.data();
-            const size_t __n = __size - __pos;
-            const auto __p = __find_unicode(__data + __pos, __n, __c);
-            if (__p)
-                return __p - __data;
-        }
-        return {};
-    }
-
-    template<class Iter, class A, typename = std::enable_if_t<!std::is_arithmetic_v<A>>>
-    constexpr inline Iter __find_unicode_array(Iter p, const size_t n, const A &cp)
-    {
-        using value_type = std::decay_t<decltype(cp[0])>;
-        static_assert(std::is_arithmetic_v<value_type> || std::is_enum_v<value_type>);
-        const auto e = p + n;
-        unsigned min_len = 4;
-        for (value_type a : cp)
-            min_len = std::min<unsigned>(min_len, internal::utf8x::code_length(a));
-        while (p < e) {
-            const auto len = Violet::internal::utf8x::sequence_length(p);
-            if (len < 1 || len > 4 || p + len >= e)
-                return nullptr;
-            if (len >= min_len) {
-                const auto val = Violet::internal::utf8x::get_switch(p, len);
-                for (value_type a : cp)
-                    if (val == a)
-                        return p;
-            }
-            p += len;
-        }
-        return nullptr;
-    }
-
-    template<class Str, class N, typename = std::enable_if_t<!std::is_arithmetic_v<N>>>
-    constexpr std::optional<size_t> find_unicode_array(const Str &__s, N &&__c, const size_t __pos = 0)
-    {
-        const size_t __size = __s.size();
-        if (__pos < __size)
-        {
-            const auto __data = __s.data();
-            const auto __p = __find_unicode_array(__data + __pos, __size - __pos, std::forward<N>(__c));
-            if (__p)
-                return __p - __data;
-        }
-        return {};
-    }
-
     template<typename A>
     constexpr void remove_prefix_whitespace(std::basic_string_view<A> &_sv) {
         while (!!_sv.length() && !!std::isspace(static_cast<unsigned char>(_sv.front())))
@@ -247,92 +268,4 @@ namespace Violet
         std::minstd_rand gen{ dev() };
         generate_random_string(std::move(gen), str, len);
     }
-
-    template<typename A>
-    class UnicodeKeeper {
-        using view_t = std::basic_string_view<A>;
-        using int_t = unsigned int;
-
-        view_t _data;
-        size_t _pos = 0;
-        unsigned _len = 1;
-
-        void __get_length(void) {
-            _len = is_at_end() ? 0
-                : internal::utf8x::sequence_length(&_data[_pos]);
-            if (_len > 4 || _pos + _len > _data.size()) // Invalid sequence
-                _len = 0;
-        }
-
-        inline void __iterate(void) { _pos += _len; __get_length(); }
-
-    public:
-
-        UnicodeKeeper() = default;
-        UnicodeKeeper(const UnicodeKeeper &) = default;
-        UnicodeKeeper(UnicodeKeeper &&) = default;
-        UnicodeKeeper &operator=(const UnicodeKeeper &) = default;
-        UnicodeKeeper &operator=(UnicodeKeeper &&) = default;
-
-        UnicodeKeeper(const view_t &_sv) : _data(_sv), _pos(0), _len(1) { skip_potential_bom(_data); __get_length(); }
-        UnicodeKeeper &operator=(const view_t &_sv) { _data = _sv; skip_potential_bom(_data); _pos = 0; _len = 1; __get_length(); return *this; }
-
-        inline bool is_at_end() const { return _len == 0 || _pos >= _data.size(); }
-        inline int_t get() const { return is_at_end() ? 0x0 : internal::utf8x::get_switch(&_data[_pos], _len); }
-        int_t get_and_iterate() { int_t i = get(); __iterate(); return i; }
-        inline operator int_t() const { return get(); }
-        inline auto get_pos() const { return _pos; }
-        inline auto get_len() const { return _len; }
-        inline void set_pos(size_t _p) { _pos = _p; __get_length(); }
-        inline auto substr() { return _data.substr(_pos); }
-        inline auto substr(size_t p, size_t s = view_t::npos) { return _data.substr(p, s); }
-        inline auto size() const { return _data.size(); }
-
-        inline auto operator*() const { return get(); }
-
-        inline UnicodeKeeper &operator++() {
-            __iterate();
-            return *this;
-        }
-
-        inline UnicodeKeeper operator++(int) {
-            UnicodeKeeper copy{*this};
-            this->__iterate();
-            return copy;
-        }
-        
-        inline auto find_and_iterate(unsigned a) {
-            const auto f = find_unicode(_data, a, _pos);
-            _pos = f.has_value() ? *f : _data.size();
-            __get_length();
-            return _pos;
-        }
-
-        template<class N>
-        inline auto find_and_iterate_array(N&&a) {
-            const auto f = find_unicode_array(_data, std::forward<N>(a), _pos);
-            _pos = f.has_value() ? *f : _data.size();
-            __get_length();
-            return _pos;
-        }
-
-        template<class Predicate>
-        void skip_all(Predicate&&p) {
-            while(!is_at_end() && p(get()))
-                __iterate();
-        }
-
-        template<class Predicate>
-        auto pop_substr_until(Predicate&&p) {
-            const auto i = _pos;
-            while(!is_at_end() && !p(get()))
-                __iterate();
-            return _data.substr(i, _pos - i);
-        }
-
-        void skip_whitespace(void) {
-            while(!is_at_end() && _len == 1 && !!std::isspace(static_cast<unsigned char>(_data[_pos])))
-                __iterate();
-        }
-    };
 }

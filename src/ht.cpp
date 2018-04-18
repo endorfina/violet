@@ -63,13 +63,13 @@ inline bool is_meaningful(A c)
 struct Protocol::Callback {
 	Protocol &parent;
 	map_t &cb;
-	Violet::UnicodeKeeper<char> &uc;
+	Violet::utf8x::translator<char> &uc;
 	Violet::UniBuffer *top;
 	size_t read_pos, pos;
 	Violet::UniBuffer out;
 	const unsigned http_error_code;
 
-	Callback(Protocol &_p, map_t &_m, Violet::UnicodeKeeper<char> &_u, Violet::UniBuffer *_h, unsigned _hec)
+	Callback(Protocol &_p, map_t &_m, Violet::utf8x::translator<char> &_u, Violet::UniBuffer *_h, unsigned _hec)
 		: parent(_p), cb(_m), uc(_u), top(_h), http_error_code(_hec) { pos = read_pos = uc.get_pos(); }
 
 	
@@ -79,7 +79,7 @@ struct Protocol::Callback {
 	void wrapHTML(InOutContainer &f, const ViewT& wrapper_content, const ViewT& wrapper_title)
 	{
 		InOutContainer out;
-		Violet::UnicodeKeeper<char> uc { f.get_string() };
+		Violet::utf8x::translator<char> uc { f.get_string() };
 		const std::array<Lovely::Codepoints, 2> hearts { Lovely::Codepoints::RedHeart, Lovely::Codepoints::SuitHeart };
 		
 		uc.skip_whitespace();
@@ -116,7 +116,7 @@ struct Protocol::Callback {
 
 
 	template<typename A>
-	inline std::string_view find_a_proper_watermelon(Violet::UnicodeKeeper<A>& src) {
+	inline std::string_view find_a_proper_watermelon(Violet::utf8x::translator<A>& src) {
 		unsigned inner_block_count = 0;
 		const size_t start = src.get_pos();
 		const std::array<Lovely::Codepoints, 4> tasty_fruits { Lovely::Codepoints::Ghost, Lovely::Codepoints::Tangerine, Lovely::Codepoints::Watermelon, Lovely::Codepoints::CrossMark };
@@ -167,7 +167,7 @@ struct Protocol::Callback {
 		read_pos = uc.get_pos();
 	}
 
-	void __recursive_stack(Violet::UnicodeKeeper<char> u)
+	void __recursive_stack(Violet::utf8x::translator<char> u)
 	{
 		write_remainder();
 		Callback lets_go_deeper(parent, cb, u, nullptr, http_error_code);
@@ -249,7 +249,7 @@ struct Protocol::Callback {
 				Violet::UniBuffer t;
 				if (t.read_from_file(fn.c_str())) {
 					auto v = t.get_string();
-					Violet::skip_potential_bom(v);
+					Violet::utf8x::remove_potential_BOM(v);
 					out << v;
 				}
 			}
@@ -366,10 +366,10 @@ struct Protocol::Callback {
 					parent.CreateSession(stt, &f);
 					break;
 				}
-				if (error_msg.length())
+				if (!!error_msg.length())
 					cb["session_error"] = std::move(error_msg);
-					
-				if (data.size() > 0) {
+				
+				if (!!data.size()) {
 #ifndef WRITE_DATES_ONLY_ON_HEADERS
 					WriteDateToLog();
 #endif
@@ -507,6 +507,9 @@ struct Protocol::Callback {
 					out.write(parent.ss->username);
 			}
 			break;
+
+		case Lovely::Function::Constant:
+			//if ()
 		default:
 			out.write(u8"\u2764\ufe0f"sv);
 		}
@@ -519,7 +522,7 @@ struct Protocol::Callback {
 	void operator()(Lovely::TangerineBlock &&tb) {
 		bool skip = true;
 
-		while (true) {
+		do {
 			if (tb.sub.empty()) {
 				if (tb.name == "Session") {
 					if (parent.ss != nullptr)
@@ -557,9 +560,8 @@ struct Protocol::Callback {
 					else skip = !std::visit([op = tb.op, &c = g->second](auto && a) {
 						using value_type = std::decay_t<decltype(a)>;
 						if constexpr (std::is_arithmetic_v<value_type>) {
-							std::size_t e = 0;
-							const value_type val = std::stol(c, &e, 0);
-							if (e > 0)
+							long val;
+							if (Violet::svtonum(c, val, 0) < c.size())
 								switch(op) {
 								case Lovely::Operator::equality: return val == a;
 								case Lovely::Operator::lessthan: return val < a;
@@ -572,8 +574,9 @@ struct Protocol::Callback {
 					}, tb.comp_val);
 				}
 			}
-			break;
 		}
+		while (false);
+
 		if (skip) {
 			find_a_proper_watermelon(uc);
 			write_remainder();
@@ -603,41 +606,44 @@ struct Protocol::Callback {
 
 void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 {
-	Violet::UnicodeKeeper<char> uc { h.get_string() };
-	map_t clipboard;
+	Violet::utf8x::translator<char> uc { h.get_string() };
 
 	uc.skip_whitespace();
-	Callback call(*this, clipboard, uc, &h, error);
-	
-	if (call.pos = uc.find_and_iterate_array(markers); call.pos < uc.size())
+	if (uc.get_and_iterate() == Lovely::Codepoints::ChequeredFlag)
 	{
-		call.out.write(std::array<unsigned char, 3>{ 0xef, 0xbb, 0xbf });
-		try {
-			while (true) {
-				auto candy = Lovely::parse(uc);
-				std::visit(call, std::move(candy));
+		map_t clipboard;
+		Callback call(*this, clipboard, uc, &h, error);
+		
+		if (call.pos = uc.find_and_iterate_array(markers); call.pos < uc.size())
+		{
+			call.out.write(std::array<unsigned char, 3>{ 0xef, 0xbb, 0xbf });
+			try {
+				while (true) {
+					auto candy = Lovely::parse(uc);
+					std::visit(call, std::move(candy));
 
-				call.pos = call.uc.find_and_iterate_array(markers);
+					call.pos = call.uc.find_and_iterate_array(markers);
 
-				if (call.pos >= call.uc.size()) {
-					call.write_remainder();
-					break;
+					if (call.pos >= call.uc.size()) {
+						call.write_remainder();
+						break;
+					}
 				}
 			}
+			catch (const char * str) {
+				call.out << char('\n') << str;
+			}
+			catch (const std::string & str) {
+				call.out << char('\n') << str;
+			}
+			catch (const std::string_view & str) {
+				call.out << char('\n') << str;
+			}
+			catch (...) {
+				call.out << "\nSomething went horribly awry ;("sv;
+			}
+			if (call.out.size() > 3)
+				call.out.swap(h);
 		}
-		catch (const char * str) {
-			call.out << char('\n') << str;
-		}
-		catch (const std::string & str) {
-			call.out << char('\n') << str;
-		}
-		catch (const std::string_view & str) {
-			call.out << char('\n') << str;
-		}
-		catch (...) {
-			call.out << "\nSomething went horribly awry ;("sv;
-		}
-		if (call.out.size() > 3)
-			call.out.swap(h);
 	}
 }
