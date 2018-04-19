@@ -18,10 +18,10 @@
 */
 
 #include "pch.h"
-#include "lovely_tags.hpp"
+#include "bluescript.hpp"
 #include "echo/buffers.hpp"
 
-using namespace Lovely;
+using namespace Blue;
 using namespace std::string_view_literals;
 
 const std::unordered_map <std::string_view, Function> sweets {
@@ -140,10 +140,10 @@ std::pair<Function, std::vector<std::string_view>> split2(std::string_view _l) {
 		ff = std::visit([](auto &&a) {
 			if constexpr (std::is_same_v<std::decay_t<decltype(a)>, std::string_view>) {
 				const auto k = sweets.find(a);
-				return k != sweets.end() ? k->second : Lovely::Function::Unknown;
+				return k != sweets.end() ? k->second : Blue::Function::Unknown;
 			} else {
 				const auto k = super_sweets.find(a);
-				return k != super_sweets.end() ? k->second : Lovely::Function::Unknown;
+				return k != super_sweets.end() ? k->second : Blue::Function::Unknown;
 			}
 		}, key);
 		if (ff != Function::Unknown)
@@ -263,22 +263,22 @@ std::optional<TangerineBlock> parse_block(Violet::utf8x::translator<char> &uc)
 	return tb;
 }
 
-std::string_view Lovely::find_a_proper_watermelon(Violet::utf8x::translator<char>& src) {
+std::string_view Blue::find_a_proper_watermelon(Violet::utf8x::translator<char>& src) {
 	unsigned inner_block_count = 0;
 	const size_t start = src.get_pos();
-	const std::array<Lovely::Codepoints, 4> tasty_fruits { Lovely::Codepoints::Ghost, Lovely::Codepoints::Tangerine, Lovely::Codepoints::Watermelon, Lovely::Codepoints::CrossMark };
+	const std::array<Blue::Codepoints, 4> tasty_fruits { Blue::Codepoints::Ghost, Blue::Codepoints::Tangerine, Blue::Codepoints::Watermelon, Blue::Codepoints::CrossMark };
 	while (!src.is_at_end()) {
 		src.find_and_iterate_array(tasty_fruits);
 		switch (src) {
-		case Lovely::Codepoints::Ghost:
-			if (*++src == Lovely::Codepoints::Grape) {
+		case Blue::Codepoints::Ghost:
+			if (*++src == Blue::Codepoints::Grape) {
 				do {
-					src.find_and_iterate(Lovely::Codepoints::Watermelon);
-				} while (!src.is_at_end() && ++src != Lovely::Codepoints::Ghost);
+					src.find_and_iterate(Blue::Codepoints::Watermelon);
+				} while (!src.is_at_end() && ++src != Blue::Codepoints::Ghost);
 				++src;
 			}
 			break;
-		case Lovely::Codepoints::Watermelon:
+		case Blue::Codepoints::Watermelon:
 			if (inner_block_count < 1) {
 				auto tt = src.substr(start, src.get_pos() - start);
 				++src;
@@ -287,12 +287,12 @@ std::string_view Lovely::find_a_proper_watermelon(Violet::utf8x::translator<char
 			else --inner_block_count;
 			++src;
 			break;
-		case Lovely::Codepoints::Tangerine:
-			src.find_and_iterate(Lovely::Codepoints::Grape);
+		case Blue::Codepoints::Tangerine:
+			src.find_and_iterate(Blue::Codepoints::Grape);
 			++inner_block_count;
 			++src;
 			break;
-		case Lovely::Codepoints::CrossMark:
+		case Blue::Codepoints::CrossMark:
 			++src;
 			++src;
 			break;
@@ -303,7 +303,7 @@ std::string_view Lovely::find_a_proper_watermelon(Violet::utf8x::translator<char
 	throw u8"Grapes couldn't find their watermelon 😢🍇"sv;
 }
 
-Candy Lovely::parse(Violet::utf8x::translator<char> &uc)
+Candy Blue::parse(Violet::utf8x::translator<char> &uc)
 {
 	const auto main = uc.get_and_iterate();
 	while (*uc == 0xfe0f)

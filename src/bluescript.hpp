@@ -21,7 +21,7 @@
 #include "echo/buffers.hpp"
 #include <variant>
 
-namespace Lovely
+namespace Blue
 {
 	enum Codepoints : unsigned
 	{

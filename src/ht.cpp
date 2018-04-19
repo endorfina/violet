@@ -19,17 +19,17 @@
 
 #include "pch.h"
 #include "protocol.hpp"
-#include "lovely_tags.hpp"
+#include "bluescript.hpp"
 
 using namespace std::string_view_literals;
 using map_t = Protocol::Hi::map_t;
 
 const std::array<unsigned, 5> markers{	// Beware of U+FE0F after some emojis
-	Lovely::Codepoints::SuitHeart,
-	Lovely::Codepoints::RedHeart,
-	Lovely::Codepoints::Tangerine,
-	Lovely::Codepoints::Ghost,
-	Lovely::Codepoints::CrossMark
+	Blue::Codepoints::SuitHeart,
+	Blue::Codepoints::RedHeart,
+	Blue::Codepoints::Tangerine,
+	Blue::Codepoints::Ghost,
+	Blue::Codepoints::CrossMark
 };
 
 inline void GenerateSalt(Violet::UniBuffer &dest, const unsigned _Size = 512u)
@@ -80,7 +80,7 @@ struct Protocol::Callback {
 		while (true) {
 			pos = uc.find_and_iterate_array(markers);
 			if (pos < uc.size()) {
-				std::visit(*this, Lovely::parse(uc));
+				std::visit(*this, Blue::parse(uc));
 			}
 			else {
 				write_remainder();
@@ -99,7 +99,7 @@ struct Protocol::Callback {
 	// {
 	// 	InOutContainer out;
 	// 	Violet::utf8x::translator<char> uc { f.get_string() };
-	// 	const std::array<Lovely::Codepoints, 2> hearts { Lovely::Codepoints::RedHeart, Lovely::Codepoints::SuitHeart };
+	// 	const std::array<Blue::Codepoints, 2> hearts { Blue::Codepoints::RedHeart, Blue::Codepoints::SuitHeart };
 		
 	// 	uc.skip_whitespace();
 	// 	size_t read_pos = uc.get_pos();
@@ -112,15 +112,15 @@ struct Protocol::Callback {
 	// 				out.write(uc.substr(read_pos, pos - read_pos));
 	// 			break;
 	// 		}
-	// 		auto candy = Lovely::parse(uc);
-	// 		if (const auto ptr = std::get_if<Lovely::HeartFunction>(&candy); ptr && (ptr->key == Lovely::Function::Title || ptr->key == Lovely::Function::Content)) {
+	// 		auto candy = Blue::parse(uc);
+	// 		if (const auto ptr = std::get_if<Blue::HeartFunction>(&candy); ptr && (ptr->key == Blue::Function::Title || ptr->key == Blue::Function::Content)) {
 	// 			if (pos > read_pos)
 	// 				out.write(uc.substr(read_pos, pos - read_pos));
 	// 			if (!uc.is_at_end() && *uc == 0xfe0f)
 	// 				++uc;
 	// 			uc.skip_whitespace();
 	// 			read_pos = uc.get_pos();
-	// 			if (ptr->key == Lovely::Function::Title) {
+	// 			if (ptr->key == Blue::Function::Title) {
 	// 				out.write(wrapper_title);
 	// 			}
 	// 			else if (!found_content) {
@@ -144,7 +144,7 @@ struct Protocol::Callback {
 		write_remainder();
 		if (check_for_init_tag) {
 			u.skip_whitespace();
-			if (*u != Lovely::Codepoints::ChequeredFlag) {
+			if (*u != Blue::Codepoints::ChequeredFlag) {
 				out.write(u.substr());
 				return;
 			}
@@ -161,11 +161,11 @@ struct Protocol::Callback {
 		lets_go_deeper.magic();
 	}
 
-	void operator()(Lovely::HeartFunction &&hf) {
+	void operator()(Blue::HeartFunction &&hf) {
 		write_remainder(); // has to be written whether or not function outputs anything 
 		switch (hf.key)
 		{
-		case Lovely::Function::Echo:
+		case Blue::Function::Echo:
 			if (hf.arg.size() == 1 || hf.arg.size() == 2) {
 					const auto& db = hf.arg.size() == 2 ? parent.info.list(hf.arg[0]) : cb;
 					if (auto a = db.find(hf.arg[hf.arg.size() - 1]); a != db.end())
@@ -173,13 +173,13 @@ struct Protocol::Callback {
 			}
 			break;
 
-		case Lovely::Function::StatusErrorCode:
+		case Blue::Function::StatusErrorCode:
 			if (http_error_code) {
 				out.write(std::to_string(http_error_code));
 			}
 			break;
 
-		case Lovely::Function::StatusErrorText:
+		case Blue::Function::StatusErrorText:
 			switch (http_error_code)
 				{
 				case 400:
@@ -203,16 +203,16 @@ struct Protocol::Callback {
 				}
 			break;
 
-		case Lovely::Function::Copyright:
+		case Blue::Function::Copyright:
 			if (!!parent.shared.var_copyright.length())
 				out.write(parent.shared.var_copyright);
 			break;
 
-		case Lovely::Function::Battery:
+		case Blue::Function::Battery:
 
 			break;
 
-		case Lovely::Function::Include:
+		case Blue::Function::Include:
 			if (hf.arg.size() == 1)
 			{
 				std::string fn{ dir_html };
@@ -226,7 +226,7 @@ struct Protocol::Callback {
 			}
 			break;
 			
-		case Lovely::Function::Wrapper:
+		case Blue::Function::Wrapper:
 			if ((hf.arg.size() == 1 || hf.arg.size() == 2) && !bool(wrapped_content)) {
 				Violet::UniBuffer t;
 				const std::string fn{ "html/wrapper_" + std::string(hf.arg[0]) + ".html" };
@@ -239,14 +239,14 @@ struct Protocol::Callback {
 			}
 			break;
 
-		case Lovely::Function::Content:
+		case Blue::Function::Content:
 			if (bool(wrapped_content)) {
 				if (!wrapped_content->second.is_at_end())
 					__recursive_stack_ref(wrapped_content->second);
 			}
 			break;
 
-		case Lovely::Function::GenerateCaptcha:
+		case Blue::Function::GenerateCaptcha:
 			if (!hf.arg.size())
 			{
 				Captcha::Init c;
@@ -259,7 +259,7 @@ struct Protocol::Callback {
 			}
 			break;
 
-		case Lovely::Function::StartSession:
+		case Blue::Function::StartSession:
 			if (const auto argc = hf.arg.size(); argc > 1 && parent.ss == nullptr && parent.shared.dir_accounts)
 			{
 				//const size_t count = tag.GetObjCount();
@@ -363,7 +363,7 @@ struct Protocol::Callback {
 			}
 			break;
 
-		case Lovely::Function::KillSession:
+		case Blue::Function::KillSession:
 			if (!hf.arg.size() && parent.ss != nullptr)
 			{
 				std::string name;
@@ -392,7 +392,7 @@ struct Protocol::Callback {
 			}
 			break;
 
-		case Lovely::Function::Register:
+		case Blue::Function::Register:
 			if (const auto argc = hf.arg.size(); argc == 6 && parent.ss == nullptr && parent.shared.dir_accounts)
 			{
 				std::string error_msg;
@@ -477,7 +477,7 @@ struct Protocol::Callback {
 			}
 			break;
 
-		case Lovely::Function::SessionInfo:
+		case Blue::Function::SessionInfo:
 			if (parent.ss != nullptr && hf.arg.size() == 1)
 			{
 				if (hf.arg[0] == "name")
@@ -485,7 +485,7 @@ struct Protocol::Callback {
 			}
 			break;
 
-		case Lovely::Function::Constant:
+		case Blue::Function::Constant:
 			//if ()
 		default:
 			out.write(u8"\u2764\ufe0f"sv);
@@ -496,7 +496,7 @@ struct Protocol::Callback {
 		}
 	}
 
-	void operator()(Lovely::TangerineBlock &&tb) {
+	void operator()(Blue::TangerineBlock &&tb) {
 		bool skip = true;
 
 		do {
@@ -513,14 +513,14 @@ struct Protocol::Callback {
 				}
 				else if (tb.name == "Userlevel") {
 					if (parent.ss != nullptr) {
-						if (tb.op == Lovely::Operator::none)
+						if (tb.op == Blue::Operator::none)
 							skip = false;
 						else
 							if (auto val = std::get_if<long>(&tb.comp_val))
 								switch(tb.op) {
-									case Lovely::Operator::equality: skip = !(parent.ss->userlevel == *val); break;
-									case Lovely::Operator::lessthan: skip = !(parent.ss->userlevel < *val); break;
-									case Lovely::Operator::greaterthan: skip = !(parent.ss->userlevel > *val); break;
+									case Blue::Operator::equality: skip = !(parent.ss->userlevel == *val); break;
+									case Blue::Operator::lessthan: skip = !(parent.ss->userlevel < *val); break;
+									case Blue::Operator::greaterthan: skip = !(parent.ss->userlevel > *val); break;
 								}
 					}
 					break;
@@ -531,7 +531,7 @@ struct Protocol::Callback {
 				const auto& db = tb.sub.empty() ? cb : parent.info.list(tb.name);
 				if (auto g = db.find(tb.sub.empty() ? tb.name : tb.sub); g != db.end())
 				{
-					if (tb.op == Lovely::Operator::none) {
+					if (tb.op == Blue::Operator::none) {
 						skip = false;
 					}
 					else skip = !std::visit([op = tb.op, &c = g->second](auto && a) {
@@ -540,12 +540,12 @@ struct Protocol::Callback {
 							long val;
 							if (Violet::svtonum(c, val, 0) < c.size())
 								switch(op) {
-								case Lovely::Operator::equality: return val == a;
-								case Lovely::Operator::lessthan: return val < a;
-								case Lovely::Operator::greaterthan: return val > a;
+								case Blue::Operator::equality: return val == a;
+								case Blue::Operator::lessthan: return val < a;
+								case Blue::Operator::greaterthan: return val > a;
 								}
 						}
-						else if (op == Lovely::Operator::equality && a == c)
+						else if (op == Blue::Operator::equality && a == c)
 							return true;
 						return false;
 					}, tb.comp_val);
@@ -560,7 +560,7 @@ struct Protocol::Callback {
 				if (auto strawberry = std::get_if<std::string_view>(tb.elseblock.get())) {
 					__recursive_stack(*strawberry, false);
 				}
-				else if (auto lemon = std::get_if<Lovely::TangerineBlock>(tb.elseblock.get())) {
+				else if (auto lemon = std::get_if<Blue::TangerineBlock>(tb.elseblock.get())) {
 					this->operator()(std::move(*lemon));
 				}
 			}
@@ -570,7 +570,7 @@ struct Protocol::Callback {
 		}
 	}
 
-	void operator()(Lovely::StrategicEscape &&se) {
+	void operator()(Blue::StrategicEscape &&se) {
 		write_remainder();
 		out.write_utfx(se.val);
 	}
@@ -593,7 +593,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 	Violet::utf8x::translator<char> uc { h.get_string() };
 
 	uc.skip_whitespace();
-	if (uc.get_and_iterate() == Lovely::Codepoints::ChequeredFlag)
+	if (uc.get_and_iterate() == Blue::Codepoints::ChequeredFlag)
 	{
 		Violet::UniBuffer output;
 		map_t clipboard;
