@@ -223,6 +223,10 @@ int ApplicationLifetime(const Application &app)
 	}
 	for (auto &l : ls) {
 		l.second.start(false, l.first.port, false);
+		for (int tries = 30; !l.second.is_listening(); --tries) {
+			sleep(1);
+			l.second.start(false, l.first.port, false);
+		}
 		if (l.second.is_listening())
 		{
 			printf("Listening on port %hu\n", l.first.port);

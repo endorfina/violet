@@ -412,7 +412,7 @@ namespace Violet::utf8x
         template<class Predicate>
         auto pop_substr_until(Predicate&&p) {
             const auto i = _pos;
-            while(!is_at_end() && !p(get()))
+            while(!(is_at_end() || p(get())))
                 __iterate();
             return _data.substr(i, _pos - i);
         }

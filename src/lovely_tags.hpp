@@ -46,14 +46,17 @@ namespace Lovely
 	enum class Function { Unknown, Constant, Variable, Wrapper, Title, Content, BlogLoad, Posts, StatusErrorCode, StatusErrorText, Copyright, Bitcoin, Battery, Include, StartSession, KillSession, Register, SessionInfo, Echo, GenerateCaptcha, Catch_recv_error };
 
 	struct TangerineBlock {
-		std::string_view name, sub;
+		std::string_view name, sub, content;
 		Operator op = Operator::none;
-		std::variant<std::string_view, long> comp_val;
+		std::variant<long, std::string_view> comp_val;
+
+		using else_t = std::variant<std::string_view, TangerineBlock>;
+		std::unique_ptr<else_t> elseblock;
 	};
 
 	struct HeartFunction {
 		const Function key;
-		std::vector<std::string_view> args;
+		std::vector<std::string_view> arg;
 		std::unique_ptr<HeartFunction> chain;
 
 		HeartFunction(Function _k) : key(_k) {}
@@ -77,6 +80,8 @@ namespace Lovely
 	{
 		return (c >= '!' && c <= '~' && c != '=' && c != ',' && c != ':' && c != '(' && c != ')' && c != '{' && c != '}');
 	}
+
+	std::string_view find_a_proper_watermelon(Violet::utf8x::translator<char>& src);
 
 	Candy parse(Violet::utf8x::translator<char> &_uc);
 }

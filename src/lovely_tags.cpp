@@ -22,6 +22,7 @@
 #include "echo/buffers.hpp"
 
 using namespace Lovely;
+using namespace std::string_view_literals;
 
 const std::unordered_map <std::string_view, Function> sweets {
 	{ "wrapper", Function::Wrapper },
@@ -123,7 +124,10 @@ inline T __split(std::string_view &_l) {
 std::vector<std::string_view> split(std::string_view _l) {
 	std::vector<std::string_view> out;
 	while(!_l.empty()) {
-		out.emplace_back(__split<std::string_view>(_l));
+		//if (auto a = __split<std::string_view>(_l); kill_cmd(a))
+		//	break;
+		//else
+			out.emplace_back(__split<std::string_view>(_l));
 	}
 	return out;
 }
@@ -185,7 +189,7 @@ HeartFunction parse_function(Violet::utf8x::translator<char> &uc) {
 					if (it->front() != ',')
 						break;
 				}
-				else hf.args.emplace_back(*it);
+				else hf.arg.emplace_back(*it);
 
 			if (*uc == '\n') {
 				uc.skip_whitespace();
@@ -201,10 +205,108 @@ HeartFunction parse_function(Violet::utf8x::translator<char> &uc) {
 	return { Function::Unknown };
 }
 
+std::optional<TangerineBlock> parse_block(Violet::utf8x::translator<char> &uc)
+{
+	uc.skip_whitespace();
+	std::string_view str = uc.pop_substr_until([](unsigned c) { return c == Codepoints::Grape; });
+	if (!str.size() || uc.is_at_end())
+		return {};
+	++uc;
+	Violet::remove_suffix_whitespace(str);
+
+	std::vector<std::string_view> tags;
+
+	tags = split(str);
+	if (!tags.size())
+		return {};
+	
+	TangerineBlock tb;
+	unsigned shift = 0;
+
+	tb.name = tags[0];
+	if (tags.size() > 3 && tags[1] == "[" && tags[3] == "]") {
+		tb.sub = tags[2];
+		shift = 3;
+	}
+	if (tags.size() == 3 + shift) {
+		if (const auto o = ops.find(tags[1 + shift]); o != ops.end()) {
+			tb.op = o->second;
+			long il;
+			if (tags[2 + shift].size() > 0 && Violet::svtonum(tags[2 + shift], il, 0) < tags[2 + shift].size()) {
+				tb.comp_val = il;
+			}
+			else tb.comp_val = tags[2 + shift];
+		}
+		else return {};
+	}
+	else if (tags.size() != 1 + shift)
+		return {};
+	tb.content = find_a_proper_watermelon(uc);
+	while (*uc == 0xfe0f)
+		++uc;
+
+	const auto _s = uc.get_pos();
+	uc.skip_whitespace();
+	if (*uc == Codepoints::Strawberry) {
+		(++uc).skip_whitespace();
+		if (*uc == Codepoints::Grape) {
+			tb.elseblock = std::make_unique<TangerineBlock::else_t>(find_a_proper_watermelon(++uc));
+		}
+		else uc.set_pos(_s);
+	}
+	else if (*uc == Codepoints::Lemon) {
+		if (auto ctb = parse_block(++uc))
+			tb.elseblock = std::make_unique<TangerineBlock::else_t>(std::move(*ctb));
+		else uc.set_pos(_s);
+	}
+	else uc.set_pos(_s);
+	return tb;
+}
+
+std::string_view Lovely::find_a_proper_watermelon(Violet::utf8x::translator<char>& src) {
+	unsigned inner_block_count = 0;
+	const size_t start = src.get_pos();
+	const std::array<Lovely::Codepoints, 4> tasty_fruits { Lovely::Codepoints::Ghost, Lovely::Codepoints::Tangerine, Lovely::Codepoints::Watermelon, Lovely::Codepoints::CrossMark };
+	while (!src.is_at_end()) {
+		src.find_and_iterate_array(tasty_fruits);
+		switch (src) {
+		case Lovely::Codepoints::Ghost:
+			if (*++src == Lovely::Codepoints::Grape) {
+				do {
+					src.find_and_iterate(Lovely::Codepoints::Watermelon);
+				} while (!src.is_at_end() && ++src != Lovely::Codepoints::Ghost);
+				++src;
+			}
+			break;
+		case Lovely::Codepoints::Watermelon:
+			if (inner_block_count < 1) {
+				auto tt = src.substr(start, src.get_pos() - start);
+				++src;
+				return tt;
+			}
+			else --inner_block_count;
+			++src;
+			break;
+		case Lovely::Codepoints::Tangerine:
+			src.find_and_iterate(Lovely::Codepoints::Grape);
+			++inner_block_count;
+			++src;
+			break;
+		case Lovely::Codepoints::CrossMark:
+			++src;
+			++src;
+			break;
+		default:
+			++src;
+		}
+	}
+	throw u8"Grapes couldn't find their watermelon 😢🍇"sv;
+}
+
 Candy Lovely::parse(Violet::utf8x::translator<char> &uc)
 {
 	const auto main = uc.get_and_iterate();
-	while (!uc.is_at_end() && uc == 0xfe0f)
+	while (*uc == 0xfe0f)
 		++uc;
 	
 	switch (main) {
@@ -221,44 +323,8 @@ Candy Lovely::parse(Violet::utf8x::translator<char> &uc)
 	case Codepoints::Tangerine:
 		if (*uc == ':')
 			++uc;
-		uc.skip_whitespace();
-		{
-			std::string_view str = uc.pop_substr_until([](unsigned c) { return c == Codepoints::Grape; });
-			if (!str.size() || uc.is_at_end())
-				break;
-			++uc;
-			Violet::remove_suffix_whitespace(str);
-
-			std::vector<std::string_view> tags;
-
-			tags = split(str);
-			if (!tags.size())
-				break;
-			//print_tags_2(stderr, tags);
-			
-			TangerineBlock tb;
-			unsigned shift = 0;
-
-			tb.name = tags[0];
-			if (tags.size() > 3 && tags[1] == "[" && tags[3] == "]") {
-				tb.sub = tags[2];
-				shift = 3;
-			}
-			if (tags.size() == 3 + shift) {
-				if (const auto o = ops.find(tags[1 + shift]); o != ops.end()) {
-					tb.op = o->second;
-					long il;
-					if (tags[2 + shift].size() > 0 && Violet::svtonum(tags[2 + shift], il, 0) < tags[2 + shift].size()) {
-						tb.comp_val = il;
-					}
-					else tb.comp_val = tags[2 + shift];
-				}
-				else break;
-			}
-			else if (tags.size() != 1 + shift)
-				break;
-			return std::move(tb);
-		}
+		if (auto tb = parse_block(uc))
+			return std::move(*tb);
 		break;
 	
 	case Codepoints::RedHeart:	// generic function structure
