@@ -26,9 +26,9 @@ int main(int argc, char *argv[])
 	try {
 		app.CheckConfigFile(argc > 1 && !!strlen(argv[1]) ? argv[1] : "violet.conf");
 	}
-	catch (...) {
+	catch (std::exception &e) {
 		//puts("EXIT_FAILURE");
-		puts("Exception thrown!");
+		puts(e.what());
 		return EXIT_FAILURE;
 	}
 	if (app.stack.empty()) {

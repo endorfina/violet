@@ -603,14 +603,8 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 		try {
 			call.magic();
 		}
-		catch (const char * str) {
-			output << char('\n') << str;
-		}
-		catch (const std::string & str) {
-			output << char('\n') << str;
-		}
-		catch (const std::string_view & str) {
-			output << char('\n') << str;
+		catch (std::exception &e) {
+			output << char('\n') << e.what();
 		}
 		catch (...) {
 			output << "\nSomething went horribly awry ;("sv;

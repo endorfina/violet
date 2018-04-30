@@ -3,3 +3,4 @@ build*
 .build*
 out
 src/lodepng_ext.hpp
+src/curly_tags.*

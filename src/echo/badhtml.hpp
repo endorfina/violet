@@ -25,7 +25,7 @@
 #include <optional>
 
 // depends on:
-#include "buffers.hpp" // Unicode
+#include "utf8.hpp"
 
 namespace Violet::badhtml
 {
@@ -36,7 +36,7 @@ namespace Violet::badhtml
         no_data_nodes = 0x1,
         no_string_terminators = 0x4,
         no_entity_translation = 0x8,
-        no_utf8 = 0x10, // should perhaps be deleted, or extended for performance (ex. switching between uskip and skip)
+        no_utf8 = 0x10,
         comment_nodes = 0x40,
         doctype_node = 0x80,
         trim_whitespace = 0x100,
@@ -151,26 +151,24 @@ namespace Violet::badhtml
         }
     };
 
-    template<class Iterator, class StopCondition>
-    auto skip(Iterator &a, const Iterator e, StopCondition p)
+    template<bool Unicode, class Iterator, class SingleByteStopCondition> // For simplicity, multiple bytes cannot function as delimiters
+    uint32_t uskip(Iterator &a, const Iterator e, SingleByteStopCondition&& p)
     {
-        for (; a != e && p(*a); ++a);
-        return *a;
-    }
-
-    template<class Iterator, class SingleByteStopCondition> // For simplicity, multiple bytes cannot function as delimiters
-    uint32_t uskip(Iterator &a, const Iterator e, SingleByteStopCondition p)
-    {
-        using namespace Violet::utf8x;
-        while (a != e) {
-            auto len = sequence_length(a);
-            if (len < 1 || len > 4)
-                throw std::make_pair<const char *, const char *>("Forbidden unicode codepoint", a);
-            if (is_html_forbidden(get_switch(a, len)))
-                throw std::make_pair<const char *, const char *>("Forbidden unicode codepoint", a);
-            else
-                if (len == 1 && !p(*a)) break;
-            for (; a != e && len > 0; --len, ++a);
+        if constexpr (Unicode) {
+            using namespace Violet::utf8x;
+            while (a != e) {
+                auto len = sequence_length(a);
+                if (len < 1 || len > 4)
+                    throw std::make_pair<const char *, const char *>("Forbidden unicode codepoint", a);
+                if (is_html_forbidden(get_switch(a, len)))
+                    throw std::make_pair<const char *, const char *>("Forbidden unicode codepoint", a);
+                else
+                    if (len == 1 && !p(*a)) break;
+                for (; a != e && len > 0; --len, ++a);
+            }
+        }
+        else {
+            for (; a != e && p(*a); ++a);
         }
         return *a;
     }
@@ -200,7 +198,7 @@ namespace Violet::badhtml
                         
             while (true)
             {
-                uskip(text, end, is_whitespace);
+                uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
                 if (text == end || !*text)
                     break;
 
@@ -231,14 +229,14 @@ namespace Violet::badhtml
                     if (*++text == '/')
                     {
                         const auto name = ++text;
-                        uskip(text, end, [](unsigned char c){ return c != '>' && c != '/' && !is_whitespace(c); });
+                        uskip<!(Options & parse_option::no_utf8)>(text, end, [](unsigned char c){ return c != '>' && c != '/' && !is_whitespace(c); });
                         if (text == name)
                             parsing_error("expected tag name", text);
                         
                         std::transform(name, text, name, ::tolower);
                         const view_t endtag{ name, static_cast<size_t>(text - name) };
 
-                        uskip(text, end, is_whitespace);
+                        uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
                         if (text == end || *text != '>')
                             parsing_error("expected >", text);
                         ++text;
@@ -260,7 +258,7 @@ namespace Violet::badhtml
                                 bool is_raw = false;
                                 for (auto&&it : __raw_elems)
                                     if (it == m.data) {
-                                        uskip(text, end, is_whitespace);
+                                        uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
                                         m.children.emplace_back(node_t::Type::data).data = just_find_innerhtml<Options>(text, end, it);
                                         is_raw = true;
                                         break;
@@ -298,7 +296,7 @@ namespace Violet::badhtml
                     text += 9;
                     return parse_doctype<Options>(text, end);
                 }
-                uskip(text, end, [](char_t c) { return c != '>'; });
+                uskip<!(Options & parse_option::no_utf8)>(text, end, [](char_t c) { return c != '>'; });
                 if (text == end || !*text)
                     parsing_error("unexpected end of data", text);
                 
@@ -309,14 +307,14 @@ namespace Violet::badhtml
                 const auto name = text;
                 node_t node{ node_t::Type::element };
                 
-                uskip(text, end, [](char_t c){ return c != '>' && c != '/' && !is_whitespace(c); });
+                uskip<!(Options & parse_option::no_utf8)>(text, end, [](char_t c){ return c != '>' && c != '/' && !is_whitespace(c); });
                 if (text == name)
                     parsing_error("expected element name", text);
 
                 std::transform(name, text, name, ::tolower);
                 node.data = view_t{ name, static_cast<size_t>(text - name) };
 
-                uskip(text, end, is_whitespace);
+                uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
 
                 parse_node_attributes<Options>(text, end, node);
 
@@ -358,19 +356,19 @@ namespace Violet::badhtml
         static void parse_node_attributes(char_it_t &text, const char_it_t end, node_t &node)
         {
             auto attrib_pred = [](unsigned char c) { return !is_whitespace(c) && c != '/' && c != '>' && c != '=' && c != '\'' && c != '\"' && c != '<'; };
-            uskip(text, end, is_whitespace);
+            uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
             
             while (*text != '/' && *text != '>' && text != end)
             {
                 auto name = text++;
-                uskip(text, end, attrib_pred);
+                uskip<!(Options & parse_option::no_utf8)>(text, end, attrib_pred);
                 if (text == name)
                     parsing_error("expected attribute name", name);
 
                 std::transform(name, text, name, ::tolower);
                 view_t attribute_name{ name, static_cast<size_t>(text - name) };
 
-                uskip(text, end, is_whitespace);
+                uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
                 if (text == end)
                     break;
 
@@ -385,7 +383,7 @@ namespace Violet::badhtml
                 if constexpr (!(Options & parse_option::no_string_terminators))
                         name[attribute_name.size()] = 0x0;
 
-                uskip(text, end, is_whitespace);
+                uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
                 if (text == end)
                     break;
 
@@ -410,7 +408,7 @@ namespace Violet::badhtml
                         if (*b != '/' && *b != '>')
                             *b = 0x0;
                 }
-                uskip(text, end, is_whitespace);
+                uskip<!(Options & parse_option::no_utf8)>(text, end, is_whitespace);
             }
         }
 
@@ -539,15 +537,15 @@ namespace Violet::badhtml
                 !(Options & parse_option::normalize_whitespace) &&
                 !(Options & parse_option::trim_whitespace))
             {
-                uskip(text, end, stop_if_not);
+                uskip<!(Options & parse_option::no_utf8)>(text, end, stop_if_not);
                 return text;
             }
             else {
                 if constexpr (!!(Options & parse_option::normalize_whitespace)) {
-                    uskip(text, end, [&](unsigned char c){ return stop_if_not(c) && c != '&' && !is_whitespace(c); });
+                    uskip<!(Options & parse_option::no_utf8)>(text, end, [&](unsigned char c){ return stop_if_not(c) && c != '&' && !is_whitespace(c); });
                 }
                 else {
-                    uskip(text, end, [&](unsigned char c){ return stop_if_not(c) && c != '&'; });
+                    uskip<!(Options & parse_option::no_utf8)>(text, end, [&](unsigned char c){ return stop_if_not(c) && c != '&'; });
                 }
 
                 char_it_t src = text, translate = text;
@@ -622,7 +620,7 @@ namespace Violet::badhtml
                             *translate++ = 0x20;
                             ++src;
                             
-                            skip(src, end, is_whitespace);
+                            uskip<false>(src, end, is_whitespace);
                             continue;
                         }
                     }
@@ -660,10 +658,10 @@ namespace Violet::badhtml
         {
             const char_it_t start = text;
             if constexpr (Options & parse_option::normalize_whitespace > 0) {
-                uskip(text, end, [](unsigned char c){ return c != '<' && !is_whitespace(c); });
+                uskip<!(Options & parse_option::no_utf8)>(text, end, [](unsigned char c){ return c != '<' && !is_whitespace(c); });
             }
             else {
-                uskip(text, end, [](char_t c){ return c != '<'; });
+                uskip<!(Options & parse_option::no_utf8)>(text, end, [](char_t c){ return c != '<'; });
             }
 
             char_it_t translate = text;
@@ -681,7 +679,7 @@ namespace Violet::badhtml
                             *text++ = 0x0;
                         else
                             ++text;
-                        uskip(text, end, [](char_t c){ return c != '>'; });
+                        uskip<!(Options & parse_option::no_utf8)>(text, end, [](char_t c){ return c != '>'; });
                         ++text;
                         break;
                     }
@@ -693,7 +691,7 @@ namespace Violet::badhtml
                     {
                         *translate++ = 0x20;
                         ++text;
-                        skip(text, end, is_whitespace);
+                        uskip<false>(text, end, is_whitespace);
                     }
                     else
                         *translate++ = *text++;

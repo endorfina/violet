@@ -44,6 +44,7 @@
 #include <optional>
 #include <random>
 #include <mutex>
+#include <exception>
 
 #include <sys/stat.h>
 

@@ -222,7 +222,7 @@ namespace Violet
 
 	public:
 		// Buffer() =default;
-        // Buffer(Buffer &&other) { Swap(other); };  // defualt is perfectly performant here
+        // Buffer(Buffer &&other) { swap(other); };  // defualt is perfectly performant here
 
 		void swap(Buffer& other) {
 			mData.swap(other.mData);
@@ -459,6 +459,65 @@ namespace Violet
 	};
 
 	using UniBuffer = Buffer<std::vector<char>>;
+
+	template<typename Val = char, typename = std::enable_if_t<std::is_trivial_v<Val>>> 
+	struct StaticData {
+		using value_type = Val;
+		using size_type = std::size_t;
+		using view_t = std::basic_string_view<value_type>;
+
+	private:
+		value_type * _data = nullptr;
+		size_type _size = 0;
+
+	public:
+        inline view_t get_string() const { return { _data, _size }; }
+        inline const value_type* data() const { return _data; }
+        inline value_type* data() { return _data; }
+		inline value_type& operator[](size_type _pos) { return _data[_pos]; };
+		inline const value_type& operator[](size_type _pos) const { return _data[_pos]; };
+        explicit inline operator value_type *() { return _data; }
+        inline operator view_t() { return { _data, _size }; }
+		inline size_type length() const { return _size; }
+		inline size_type size() const { return _size; }
+
+		void clear() {
+			if (_data) {
+				free(_data);
+				_data = nullptr;
+			}
+			_size = 0;
+		}
+
+        void resize(size_t newlength) {
+			if (!newlength) {
+				clear();
+			}
+			else if (auto newptr = realloc(_data, newlength * sizeof(value_type))) {
+				_data = newptr;
+				_size = newlength;
+				//_data[newlength] = 0x0;
+			}
+			else {
+				clear();
+			}
+		}
+
+		void swap(StaticData & other) {
+			std::swap(other._data, _data);
+			std::swap(other._size, _size);
+		}
+		
+		StaticData() = default;
+
+		StaticData(const StaticData&) = delete;
+		StaticData& operator=(const StaticData&) = delete;
+
+		StaticData(StaticData&& from) { from.swap(*this); }
+		StaticData& operator=(StaticData&& from)  { from.swap(*this); return *this; }
+		
+		~StaticData() { clear(); }
+	};
 
 #ifndef VIOLET_NO_COMPILE_HASHES
 	template<std::size_t IntCount>

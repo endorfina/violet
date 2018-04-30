@@ -131,7 +131,7 @@ struct Protocol {
 				return get;
 			else if (_name == "cookie"sv)
 				return cookie;
-			throw "Null query"sv;
+			throw std::runtime_error("Null query");
 		}
 	};
 

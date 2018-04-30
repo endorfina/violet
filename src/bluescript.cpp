@@ -300,7 +300,7 @@ std::string_view Blue::find_a_proper_watermelon(Violet::utf8x::translator<char>&
 			++src;
 		}
 	}
-	throw u8"Grapes couldn't find their watermelon 😢🍇"sv;
+	throw std::runtime_error(u8"Grapes couldn't find their watermelon 😢🍇");
 }
 
 Candy Blue::parse(Violet::utf8x::translator<char> &uc)
