@@ -19,7 +19,7 @@
 
 #pragma once
 #include "echo/tcp.hpp"
-#include "error.hpp"
+//#include "error.hpp"
 #include "captcha_image_generator.hpp"
 #include "blog.h"
 
@@ -64,15 +64,15 @@ struct Protocol {
 		time_t last_activity;
 		uint8_t userlevel;
 
-		struct CharacterInfo {
-			std::string name;
-		};
+		// struct CharacterInfo {
+		// 	std::string name;
+		// };
 
-		std::unique_ptr<CharacterInfo> character;
+		// std::unique_ptr<CharacterInfo> character;
 
 		template<class Str, typename = std::enable_if_t<std::is_convertible_v<Str, std::string>>>
 		Session(Str&& _Name)
-			: username(std::forward<Str>(_Name)), last_activity(time(nullptr)), character(nullptr)
+			: username(std::forward<Str>(_Name)), last_activity(time(nullptr)) //, character(nullptr)
 		{}
 	};
 

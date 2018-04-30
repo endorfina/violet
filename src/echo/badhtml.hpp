@@ -173,8 +173,7 @@ namespace Violet::badhtml
         return *a;
     }
 
-    template<typename A = char,            // This will only really work with utf8, hm... Let's ensure the size is just 1
-                typename = std::enable_if_t<sizeof(A) == 1>>
+    template<typename A = char>
     class Document : public Node<A>
     {
         static inline void parsing_error(const char * what, const char * where) {
