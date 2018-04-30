@@ -25,19 +25,19 @@ namespace Violet::utf8x
     template<typename A>
     constexpr void remove_potential_BOM(A &text)
     {
-        const unsigned char * check = nullptr;
+        std::conditional_t<is_view<A>::value, decltype(text.data()), const unsigned char *> check = nullptr;
         if constexpr (is_view<A>::value) {
             static_assert(sizeof(typename A::value_type) == 1);
             if (text.size() < 3)
                 return;
-            check = reinterpret_cast<const unsigned char *>(text.data());
+            check = text.data();
         }
         else {
             static_assert(sizeof(std::decay_t<decltype(*text)>) == 1);
             check = (const unsigned char *)&(*text);    // should take care of pointers and iterators
         }
         for (unsigned char bom : { 0xef, 0xbb, 0xbf })
-            if (bom != *check++)
+            if (bom != static_cast<unsigned char>(*check++))
                 return;
         if constexpr (is_view<A>::value) {
             text.remove_prefix(3);
@@ -346,78 +346,98 @@ namespace Violet::utf8x
         size_t _pos = 0;
         unsigned _len = 1;
 
-        void __get_length(void) {
+        constexpr void __get_length(void) {
             _len = is_at_end() ? 0
                 : sequence_length(&_data[_pos]);
             if (_len > 4 || _pos + _len > _data.size()) // Invalid sequence
                 _len = 0;
         }
 
-        inline void __iterate(void) { _pos += _len; __get_length(); }
+        constexpr inline void __iterate(void) { _pos += _len; __get_length(); }
 
     public:
 
-        translator() = default;
-        translator(const translator &) = default;
-        translator(translator &&) = default;
-        translator &operator=(const translator &) = default;
-        translator &operator=(translator &&) = default;
+        struct __end_sentinel {
+            constexpr bool operator==(const translator &_t) {
+                return _t.is_at_end();
+            }
+            constexpr bool operator!=(const translator &_t) {
+                return !_t.is_at_end();
+            }
 
-        translator(const view_t &_sv) : _data(_sv), _pos(0), _len(1) { remove_potential_BOM(_data); __get_length(); }
-        translator &operator=(const view_t &_sv) { _data = _sv; remove_potential_BOM(_data); _pos = 0; _len = 1; __get_length(); return *this; }
+            friend constexpr bool operator!=(__end_sentinel _es, const translator &_t) {
+                return !_t.is_at_end();
+            }
+            friend constexpr bool operator!=(const translator &_t, __end_sentinel _es) {
+                return !_t.is_at_end();
+            }
+        };
 
-        inline bool is_at_end() const { return _len == 0 || _pos >= _data.size(); }
-        inline int_t get() const { return is_at_end() ? 0x0 : get_switch(&_data[_pos], _len); }
-        int_t get_and_iterate() { int_t i = get(); __iterate(); return i; }
-        inline operator int_t() const { return get(); }
-        inline auto get_pos() const { return _pos; }
-        inline auto get_len() const { return _len; }
-        inline void set_pos(size_t _p) { _pos = _p; __get_length(); }
-        inline auto substr() { return _data.substr(_pos); }
-        inline auto substr(size_t p, size_t s = view_t::npos) { return _data.substr(p, s); }
-        inline auto size() const { return _data.size(); }
+        constexpr translator() = default;
+        constexpr translator(const translator &) = default;
+        constexpr translator(translator &&) = default;
+        constexpr translator &operator=(const translator &) = default;
+        constexpr translator &operator=(translator &&) = default;
 
-        inline auto operator*() const { return get(); }
+        constexpr translator(const view_t &_sv) : _data(_sv), _pos(0), _len(1) { remove_potential_BOM(_data); __get_length(); }
+        constexpr translator &operator=(const view_t &_sv) { _data = _sv; remove_potential_BOM(_data); _pos = 0; _len = 1; __get_length(); return *this; }
 
-        inline translator &operator++() {
+        constexpr inline bool is_at_end() const { return _len == 0 || _pos >= _data.size(); }
+        constexpr inline int_t get() const { return is_at_end() ? 0x0 : get_switch(&_data[_pos], _len); }
+        constexpr int_t get_and_iterate() { int_t i = get(); __iterate(); return i; }
+        constexpr inline operator int_t() const { return get(); }
+        constexpr inline auto get_pos() const { return _pos; }
+        constexpr inline auto get_len() const { return _len; }
+        constexpr inline void set_pos(size_t _p) { _pos = _p; __get_length(); }
+        constexpr inline auto substr() { return _data.substr(_pos); }
+        constexpr inline auto substr(size_t p, size_t s = view_t::npos) { return _data.substr(p, s); }
+        constexpr inline auto size() const { return _data.size(); }
+
+        constexpr inline auto operator*() const { return get(); }
+
+        constexpr inline translator &operator++() {
             __iterate();
             return *this;
         }
 
-        inline translator operator++(int) {
+        constexpr inline translator operator++(int) {
             translator copy{*this};
             this->__iterate();
             return copy;
         }
+
+        constexpr inline __end_sentinel end(void) { return {}; }
+
+        constexpr inline translator begin(void) { return translator{_data}; }
         
-        inline auto find_and_iterate(unsigned a) {
+        constexpr inline auto find_and_iterate(unsigned a) {
             _pos = std::min(find_unicode(_data, a, _pos), _data.size());
             __get_length();
             return _pos;
         }
 
         template<class N>
-        inline auto find_and_iterate_array(N&&a) {
+        constexpr inline auto find_and_iterate_array(N&&a) {
             _pos = std::min(find_unicode_array(_data, std::forward<N>(a), _pos), _data.size());
             __get_length();
             return _pos;
         }
 
         template<class Predicate>
-        void skip_all(Predicate&&p) {
+        constexpr void skip_all(Predicate&&p) {
             while(!is_at_end() && p(get()))
                 __iterate();
         }
 
         template<class Predicate>
-        auto pop_substr_until(Predicate&&p) {
+        constexpr auto pop_substr_until(Predicate&&p) {
             const auto i = _pos;
             while(!(is_at_end() || p(get())))
                 __iterate();
             return _data.substr(i, _pos - i);
         }
 
-        void skip_whitespace(void) {
+        constexpr void skip_whitespace(void) {
             while(!is_at_end() && _len == 1 && !!std::isspace(static_cast<unsigned char>(_data[_pos])))
                 __iterate();
         }

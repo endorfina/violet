@@ -21,16 +21,21 @@
 
 using namespace Violet;
 
+template<typename A, std::size_t N>
+constexpr std::array<A, N> fill_array(void) {
+	std::array<A, N> a;
+	for (std::conditional_t<std::is_signed_v<A>, int, unsigned> i = 0; i < N; ++i)
+		a[i] = i;
+	return a;
+}
+
 void internal::rc4_crypt(unsigned char *out, std::size_t size, const unsigned char *key, std::size_t keysize) {
-	std::array<unsigned char, 256> table;
+	auto table = fill_array<unsigned char, 256>();
 	unsigned char i = 0, j = 0;
-	for (auto&&c : table)
-		c = i++;
 	for (unsigned k = 0; k < 256; ++k) {
 		j += table[k] + key[k % keysize];
 		std::swap(table[k], table[j]);
 	}
-	i = 0;
 	j = 0;
 	for (unsigned k = 0; k < size; ++k) {
 		j += table[++i];
