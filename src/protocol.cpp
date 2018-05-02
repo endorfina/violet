@@ -471,30 +471,42 @@ inline unsigned int ReadUnsignedInt(Violet::Buffer<T> &src, uint8_t bytes = 2)
 	return i += src.template read<uint8_t>();
 }
 
-// returns true if file is confirmed HTML file
-template<class T, class S>
-bool file_search(Violet::Buffer<T> &buff, S && sv, struct stat &attrib, const char * folder)
-{
-	std::string fn { sv };
-	if (folder != nullptr) {
-		if (buff.read_from_file((fn = folder + fn).c_str())) {
-			::stat(fn.c_str(), &attrib);
-			return false;
+//#include "file_cache.hpp"
+
+struct file {
+	bool is_html = false;
+	//std::string_view data;
+	Violet::UniBuffer data;
+	struct stat attrib;
+	
+	//template <class S>
+	static file search(const std::string_view &_sv, const char * _folder)
+	{
+		file _f;
+		//cached_file _cf;
+		std::string fn { _sv };
+		if (_folder != nullptr) {
+			if (_f.data.read_from_file((fn = _folder + fn).c_str())) {
+				::stat(fn.c_str(), &_f.attrib);
+				_f.is_html = false;
+			}
+			else if (_f.data.read_from_file((fn += ".html").c_str())) {
+				_f.is_html = true;
+			}
+			if (!!_f.data.size())
+				return _f;
+			fn.assign(_sv);
 		}
-		if (buff.read_from_file((fn += ".html").c_str())) {
-			return true;
+		if (_f.data.read_from_file((fn = DIRECTORY_SHARED + fn).c_str())) {
+			::stat(fn.c_str(), &_f.attrib);
+			_f.is_html = false;
 		}
-		fn.assign(sv);
+		else if (_f.data.read_from_file((fn += ".html").c_str())) {
+			_f.is_html = true;
+		}
+		return _f;
 	}
-	if (buff.read_from_file((fn = DIRECTORY_SHARED + fn).c_str())) {
-		::stat(fn.c_str(), &attrib);
-		return false;
-	}
-	if (buff.read_from_file((fn += ".html").c_str())) {
-		return true;
-	}
-	return false;
-}
+};
 
 //#include <iostream> just for testing
 
@@ -560,7 +572,7 @@ void Protocol::HandleRequest()
 				std::lock_guard<std::mutex> lock(logging.first);
 				if (ip != "127.0.0.1")
 					logging.second << ' ' << ip << ';';
-				logging.second.write<uint16_t>(0xa0d);
+				logging.second.write_crlf();
 				if (logging.second.length() > MAX_HEAP_SIZE)
 					SaveLogHeapBuffer();
 				received = true;
@@ -609,12 +621,12 @@ void Protocol::HandleRequest()
 	}
 	if (!response_ready && received)
 	{
-		Violet::UniBuffer b, varf;
+		Violet::UniBuffer message;
+		file varf;
 		Hi::headers_t::iterator key;
-		bool is_html = false, modified = true, partial = false, created = false;
+		bool modified = true, partial = false, created = false;
 		uint16_t error = 0;
 		std::string_view filename = info.fetch;
-		struct stat file_attrib;
 		const auto get_mark = Violet::find_skip_utf8(filename, '?');
 
 		if (get_mark != std::string::npos) {
@@ -646,7 +658,7 @@ void Protocol::HandleRequest()
 				error = 403;
 			else if (filename.length() == 1)
 			{
-				is_html = true;
+				varf.is_html = true;
 				filename = "/root.html";
 			}
 			if (std::count(filename.begin(), filename.end(), '.') > 1 || slashes > 1)
@@ -670,36 +682,37 @@ void Protocol::HandleRequest()
 					shared.captcha_sig.erase(capf);
 					created = true;
 					if (ef.ptr)
-						varf.read_from_mem(ef.ptr, ef.size);
+						varf.data.read_from_mem(ef.ptr, ef.size);
 				}
 				else error = 404;
 			}
-			else if (!(is_html = file_search(varf, filename, file_attrib, shared.dir_accessible))) {
-				if (!varf.length()) {
+			else if (varf = file::search(filename, shared.dir_accessible); !varf.is_html) {
+				if (!varf.data.length()) {
 					std::string efn { dir_html };
 					efn += "/error.html";
-					varf.read_from_file(efn.c_str());
-					is_html = true;
+					varf.data.read_from_file(efn.c_str());
+					varf.is_html = true;
 					error = 404;
-					if (!varf.length())
-						varf << "No file found. :(\n"sv;	// one more check just in case there's no error file
+					if (!varf.data.length())
+						varf.data << "No file found. :(\n"sv;	// one more check just in case there's no error file
 				}
 				else if (filename.length() > 5
 						&& filename.substr(filename.length() - 5) == ".html")
-					is_html = true;
+					varf.is_html = true;
 			}
 		}
-		char dt[64], * dtm = nullptr, * s_len = nullptr, * s_range = nullptr;
+		char dt[64];
+		std::unique_ptr<char[]> dtm, s_len, s_range;
 		static const char * dtformat = "%a, %d %b %Y %T GMT";
 		auto now = time(nullptr);
 		tm gmt = *gmtime(&now);
 		strftime(dt, 64, dtformat, &gmt);
 
-		if (!error && !is_html && !created)
+		if (!error && !varf.is_html && !created)
 		{
-			gmt = *gmtime(&(file_attrib.st_ctime));
-			dtm = new char[64];
-			strftime(dtm, 64, dtformat, &gmt);
+			gmt = *gmtime(&(varf.attrib.st_ctime));
+			dtm.reset(new char[64]);
+			strftime(dtm.get(), 64, dtformat, &gmt);
 			key = info.raw_headers.find("if-modified-since");
 			if (key != info.raw_headers.end())
 			{
@@ -725,10 +738,11 @@ void Protocol::HandleRequest()
 		info.AddHeader("Connection", "close");
 #endif
 		info.AddHeader("Accept-Ranges", "bytes");
-		if (varf.length() > 0 && modified)
+		if (varf.data.length() > 0 && modified)
 		{
-			if (is_html) {
-				HandleHTML(varf, error);
+			if (varf.is_html) {
+				if (auto o = HandleHTML(varf.data.get_string(), error); bool(o))
+					varf.data = std::move(*o);
 				info.AddHeader("Content-Type", "text/html");
 			}
 			else {
@@ -743,28 +757,28 @@ void Protocol::HandleRequest()
 			if (key != info.raw_headers.end())
 			{
 				size_t beg = 0, en = 0;
-				const size_t s = varf.length();
+				const size_t s = varf.data.length();
 				int amt = sscanf(key->second, "bytes=%zu-%zu", &beg, &en);
 				partial = true;
 				if (amt > 0) {
-					s_range = new char[64];
+					s_range.reset(new char[64]);
 					Violet::UniBuffer swap;
 					if (amt == 1)
 						en = s - 1;
 					if (beg >= s || en >= s || beg > en) {
 						error = 416;
-						varf.clear();
+						varf.data.clear();
 					}
 					else {
-						snprintf(s_range, 64, "bytes %zu-%zu/%zu", beg, en, s);
-						info.AddHeader("Content-Range", s_range);
-						swap.write_buffer(varf, beg, en - beg + 1);
-						varf.swap(swap);
+						snprintf(s_range.get(), 64, "bytes %zu-%zu/%zu", beg, en, s);
+						info.AddHeader("Content-Range", s_range.get());
+						swap.write_buffer(varf.data, beg, en - beg + 1);
+						varf.data.swap(swap);
 					}
 				}
 				else {
 					error = 416;
-					varf.clear();
+					varf.data.clear();
 				}
 			}
 
@@ -804,11 +818,11 @@ void Protocol::HandleRequest()
 					if (deflate != encodings.end()) {
 						if (deflate->second > 0.f)
 						{
-							auto swap = Violet::UniBuffer::zlib_compress(varf.get_string(), false);
-							if (swap.length() < varf.length())
+							auto swap = Violet::UniBuffer::zlib_compress(varf.data.get_string(), false);
+							if (swap.length() < varf.data.length())
 							{
 								info.AddHeader("Content-Encoding", "deflate");
-								varf.swap(swap);
+								varf.data.swap(swap);
 							}
 						}
 					}
@@ -816,64 +830,56 @@ void Protocol::HandleRequest()
 			}
 #endif
 			// TRANSFER LENGTH
-			s_len = new char[32];
-			snprintf(s_len, 32, "%zu", varf.length());
-			info.AddHeader("Content-Length", s_len);
-			info.AddHeader("Last-Modified", is_html || dtm == nullptr ? dt : dtm);
-			/*Data::MD5 md5;
-			md5.Begin();
-			md5.ReadMem(varf.GetData(), static_cast<uint32_t>(varf.GetLength()));
-			md5.End();
-			info.AddHeader("Content-MD5", Data::Buffer::Base64Encode(md5.Result(), 16u));*/
+			s_len.reset(new char[32]);
+			snprintf(s_len.get(), 32, "%zu", varf.data.length());
+			info.AddHeader("Content-Length", s_len.get());
+			info.AddHeader("Last-Modified", varf.is_html || !bool(dtm) ? dt : dtm.get());
+			/* // md5???
+			info.AddHeader("Content-MD5", ...);*/
 		}
 		info.raw_headers.clear();
-		b << "HTTP/1.1 "sv;
+		message << "HTTP/1.1 "sv;
 		if (error > 0)
 		{
-			b << std::to_string(static_cast<int>(error)) << char(0x20);
+			message << std::to_string(static_cast<int>(error)) << char(0x20);
 			switch (error)
 			{
 			case 400:
-				b << "Bad Request"sv;
+				message << "Bad Request"sv;
 				break;
 			case 403:
-				b << "Forbidden"sv;
+				message << "Forbidden"sv;
 				break;
 			case 404:
-				b << "Not Found"sv;
+				message << "Not Found"sv;
 				break;
 			case 405:
-				b << "Method Not Allowed"sv;
+				message << "Method Not Allowed"sv;
 				break;
 			case 416:
-				b << "Requested Range Not Satisfiable"sv;
+				message << "Requested Range Not Satisfiable"sv;
 				break;
 			case 501:
-				b << "Not Implemented"sv;
+				message << "Not Implemented"sv;
 				break;
 			}
 		}
 		else if (!modified)
-			b << "304 Not Modified"sv;
+			message << "304 Not Modified"sv;
 		else if (partial)
-			b << "206 Partial Content"sv;
+			message << "206 Partial Content"sv;
 		else
-			b << "200 OK"sv;
-		b.write_crlf();
+			message << "200 OK"sv;
+		message.write_crlf();
 		for (auto &&a : info.content_headers) {
-			b << a.first << ": "sv << a.second << "\r\n"sv;
+			message << a.first << ": "sv << a.second << "\r\n"sv;
 		}
 		info.content_headers.clear();
-		if (dtm)
-			delete[]dtm;
-		if (s_len)
-			delete[]s_len;
-		if (s_range)
-			delete[]s_range;
-		b.write_crlf();
-		if (varf.length() > 0 && modified && info.method != Hi::Method::Head)
-			b << varf;
-		s << b;
+
+		message.write_crlf();
+		if (varf.data.length() > 0 && modified && info.method != Hi::Method::Head)
+			message << varf.data;
+		s << message;
 		response_ready = true;
 		sent = false;
 		last_used = time(nullptr);

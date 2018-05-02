@@ -153,7 +153,7 @@ struct Protocol {
 	void HandleRequest();
 
 private:
-	void HandleHTML(Violet::UniBuffer &file, uint16_t error);
+	std::optional<Violet::UniBuffer> HandleHTML(const std::string_view &file, uint16_t error);
 
 	void CreateSession(std::string_view name, Violet::UniBuffer *loaded_file);
 

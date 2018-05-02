@@ -588,9 +588,9 @@ struct Protocol::Callback {
 
 
 
-void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
+std::optional<Violet::UniBuffer> Protocol::HandleHTML(const std::string_view &h, uint16_t error)
 {
-	Violet::utf8x::translator<char> uc { h.get_string() };
+	Violet::utf8x::translator<char> uc { h };
 
 	uc.skip_whitespace();
 	if (uc.get_and_iterate() == Blue::Codepoints::ChequeredFlag)
@@ -610,6 +610,7 @@ void Protocol::HandleHTML(Violet::UniBuffer &h, uint16_t error)
 			output << "\nSomething went horribly awry ;("sv;
 		}
 		if (output.size() > 3)
-			output.swap(h);
+			return output;
 	}
+	return {};
 }
