@@ -304,7 +304,7 @@ struct Protocol::Callback {
 					auto llfile = dir + USERFILE_LASTLOGIN;
 					if (f.read_from_file(llfile.c_str()))
 					{
-						std::chrono::system_clock::time_point last_login(std::chrono::milliseconds(f.read<long long>())),
+						std::chrono::system_clock::time_point last_login(std::chrono::microseconds(f.read<std::chrono::microseconds::rep>())),
 							now = std::chrono::system_clock::now();
 						auto d = std::chrono::duration_cast<std::chrono::seconds>(now - last_login).count();
 						if (d <= 10)
@@ -315,7 +315,7 @@ struct Protocol::Callback {
 							break;
 						}
 						f.clear();
-						f.write<long long>(now.time_since_epoch().count());
+						f.write(std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count());
 						f.write_to_file(llfile.c_str());
 					}
 					if (!f.read_from_file((dir + USERFILE_ACC).c_str()))
@@ -457,7 +457,7 @@ struct Protocol::Callback {
 							w.write_to_file((dir + USERFILE_ACC).c_str());
 
 							w.clear();
-							w.write<long long>( 0x0 );
+							w.write<std::chrono::microseconds::rep>( 0x0 );
 							w.write_to_file((dir + USERFILE_LASTLOGIN).c_str());
 
 							cb["register_msg"] = "Account `<strong>" + data[0] + "</strong>` has been created.";
