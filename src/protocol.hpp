@@ -61,7 +61,7 @@ struct Protocol {
 
 	struct Session {
 		std::string username, email;
-		time_t last_activity;
+		std::chrono::system_clock::time_point last_activity;
 		uint8_t userlevel;
 
 		// struct CharacterInfo {
@@ -72,7 +72,7 @@ struct Protocol {
 
 		template<class Str, typename = std::enable_if_t<std::is_convertible_v<Str, std::string>>>
 		Session(Str&& _Name)
-			: username(std::forward<Str>(_Name)), last_activity(time(nullptr)) //, character(nullptr)
+			: username(std::forward<Str>(_Name)), last_activity(std::chrono::system_clock::now()) //, character(nullptr)
 		{}
 	};
 
@@ -140,7 +140,7 @@ struct Protocol {
 	size_t body_length = 0;
 	std::vector<char> body_temp;
 	
-	time_t last_used = time(nullptr);
+	std::chrono::system_clock::time_point last_used = std::chrono::system_clock::now();
 	
 	Hi info;
 	Session *ss = nullptr;
@@ -176,7 +176,7 @@ public:
 		const char * const dir_accessible, * const dir_accounts;
 		sessions_t sessions;
 		std::vector<Blog> active_blogs;
-		std::list<std::pair<Captcha::Signature, time_t>> captcha_sig;
+		std::list<std::pair<Captcha::Signature, std::chrono::system_clock::time_point>> captcha_sig;
 		std::string_view var_copyright;
 
 		Shared(const char * _access, const char * _accounts, std::string_view _cpr)

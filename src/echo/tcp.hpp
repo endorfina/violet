@@ -334,7 +334,7 @@ namespace Violet
 	
 		struct Cookie {
 			std::string value;
-			time_t expi;
+			std::chrono::system_clock::time_point expi;
 			bool persistent = false;
 		};
 

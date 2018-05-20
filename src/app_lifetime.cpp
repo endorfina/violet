@@ -133,7 +133,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l
 	bool block = true;
 
 	while (!killswitch) {
-		time_t now;
+		std::chrono::system_clock::time_point now;
 		if (block) {
 			http.emplace_back(l.second.block_once(
 #ifdef VIOLET_SOCKET_USE_OPENSSL
@@ -162,9 +162,9 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l
 		{
 			for (auto &it : http)
 				it.HandleRequest();
-			now = time(nullptr);
+			now = std::chrono::system_clock::now();
 			for (auto e = http.begin(); e != http.end();)
-				if (e->sent || !e->s.is_functional() || (now - e->last_used > 25))
+				if (e->sent || !e->s.is_functional() || (std::chrono::duration_cast<std::chrono::seconds>(now - e->last_used).count() > 25))
 					e = http.erase(e);
 				else
 					++e;
@@ -178,9 +178,9 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l
 			tick = 0;
 			if (auto amt = shared_registry.sessions.size(); !!amt || !!shared_registry.captcha_sig.size())
 			{
-				now = time(nullptr);
+				now = std::chrono::system_clock::now();
 				for (auto it = shared_registry.sessions.begin(); it != shared_registry.sessions.end();)
-					if (now - it->second.last_activity > 1000)
+					if (std::chrono::duration_cast<std::chrono::minutes>(now - it->second.last_activity).count() > 10)
 						it = shared_registry.sessions.erase(it);
 					else
 						++it;
@@ -193,7 +193,7 @@ void RoutineA(std::pair<const Application::Server&, Violet::ListeningSocket> &l
 					Protocol::logging.second << str << '\n';
 				}
 				for (auto it = shared_registry.captcha_sig.begin(); it != shared_registry.captcha_sig.end();)
-					if (now - it->second > 20)
+					if (std::chrono::duration_cast<std::chrono::seconds>(now - it->second).count() > 20)
 						it = shared_registry.captcha_sig.erase(it);
 					else
 						++it;
@@ -253,9 +253,9 @@ int ApplicationLifetime(const Application &app)
 		}
 	
 	puts("HTTP is ready!");
-	if constexpr (sizeof(time_t) < 8) {
-		printf("WARNING: time_t is only %zu bits long\n", sizeof(time_t) * 8);
-	}
+	// if constexpr (sizeof(time_t) < 8) {
+	// 	printf("WARNING: time_t is only %zu bits long\n", sizeof(time_t) * 8);
+	// }
 	
 	if (app.daemon) {
 		pid_t pid, sid;

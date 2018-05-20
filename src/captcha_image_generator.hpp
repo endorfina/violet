@@ -24,6 +24,7 @@
 #endif
 
 #include "echo/buffers.hpp"
+#include "echo/math.hpp"
 
 namespace Captcha
 {
@@ -35,72 +36,10 @@ namespace Captcha
 		return a * a;
 	}
 	
-	template<typename T,
-		typename = std::enable_if_t<std::is_scalar_v<T>>>
-    struct point2 {
-        T x, y;
-        point2() = default;
-        point2(T a, T b) : x(a), y(b) {}
-
-        constexpr point2 &operator+=(const point2 & other) {
-			x += other.x;
-			y += other.y;
-			return *this;
-		}
-
-		constexpr point2 & operator-=(const point2 & other) {
-			x -= other.x;
-			y -= other.y;
-			return *this;
-		}
-
-        constexpr point2 &operator*=(const point2 & other) {
-			x *= other.x;
-			y *= other.y;
-			return *this;
-		}
-
-		constexpr point2 & operator/=(const point2 & other) {
-			x /= other.x;
-			y /= other.y;
-			return *this;
-		}
-
-		constexpr friend point2 operator*(point2 first, const point2 & second) { return first *= second; }
-
-		constexpr friend point2 operator/(point2 first, const point2 & second) { return first /= second; }
-
-		constexpr friend point2 operator+(point2 first, const point2 & second) { return first += second; }
-
-		constexpr friend point2 operator-(point2 first, const point2 & second) { return first -= second; }
-
-		constexpr friend point2 operator*(point2 first, T second) { return first *= second; }
-
-		constexpr friend point2 operator/(point2 first, T second) { return first /= second; }
-
-        constexpr point2& operator*=(T f) {
-            x *= f;
-            y *= f;
-            return *this;
-        }
-        constexpr point2& operator/=(T f) {
-            x /= f;
-            y /= f;
-            return *this;
-        }
-
-		constexpr inline T product(const point2 & other) { return x * other.x + y * other.y; }
-
-		// Distance
-		friend float operator^(const point2 & first, const point2 & second) {
-			return sqrtf(sqr(first.x - second.x) + sqr(first.y - second.y));
-		}
-    };
-	
 	template<typename T>
-	float DistancePtLine(const point2<T>& a, const point2<T>& b, const point2<T>& p)
+	float DistancePtLine(const Violet::point2<T>& a, const Violet::point2<T>& b, const Violet::point2<T>& p)
 	{
-		point2<T> n = b - a,
+		Violet::point2<T> n = b - a,
 			pa = a - p,
 			//c = n * ((pa % n) / (n % n)),
 			d = pa - (n *= (pa.product(n) / n.product(n)));
@@ -108,9 +47,9 @@ namespace Captcha
 	}
 
 	template<typename T>
-	auto SqDistancePtLineSegment(const point2<T>& a, const point2<T>& b, const point2<T>& p)
+	auto SqDistancePtLineSegment(const Violet::point2<T>& a, const Violet::point2<T>& b, const Violet::point2<T>& p)
 	{
-		point2<T> n = b - a,
+		Violet::point2<T> n = b - a,
 			pa = a - p;
 	 
 		const auto c = n.product(pa);
@@ -119,14 +58,14 @@ namespace Captcha
 		if ( c > 0.0f )
 			return pa.product(pa);
 	 
-		point2<T> bp = p - b;
+		Violet::point2<T> bp = p - b;
 	 
 		// Closest point is b
 		if (n.product(bp) > 0.0f )
 			return bp.product(bp);
 	 
 		// Closest point is between a and b
-		point2<T> e = pa - (n *= (c / n.product(n)));
+		Violet::point2<T> e = pa - (n *= (c / n.product(n)));
 	 
 		return e.product(e);
 	}
@@ -177,15 +116,15 @@ namespace Captcha
 	};
 	
 	struct line_segment {
-		const std::array<point2<float>, 2> p;
+		const std::array<Violet::point2<float>, 2> p;
 		const float d, n;
 		
-		line_segment(const point2<float> &p1, const point2<float> &p2)
+		line_segment(const Violet::point2<float> &p1, const Violet::point2<float> &p2)
 			: p({ p1, p2 }), d(p1 ^ p2), n(std::max(fabsf(p1.x - p2.x), fabsf(p1.y - p2.y) )) {}
 	};
 	
 	struct figure {
-		std::vector<point2<float>> v;
+		std::vector<Violet::point2<float>> v;
 		bool is_strip = true;
 	};
 

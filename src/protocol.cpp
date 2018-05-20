@@ -483,7 +483,6 @@ struct file {
 	static file search(const std::string_view &_sv, const char * _folder)
 	{
 		file _f;
-		//cached_file _cf;
 		std::string fn { _sv };
 		if (_folder != nullptr) {
 			if (_f.data.read_from_file((fn = _folder + fn).c_str())) {
@@ -537,7 +536,7 @@ void Protocol::HandleRequest()
 							if (ssid != shared.sessions.end())
 							{
 								ss = &(ssid->second);
-								ss->last_activity = time(nullptr);
+								ss->last_activity = std::chrono::system_clock::now();
 							}
 							else info.AddHeader("Set-Cookie", SESSION_KILL_CMD);
 						}
@@ -882,7 +881,7 @@ void Protocol::HandleRequest()
 		s << message;
 		response_ready = true;
 		sent = false;
-		last_used = time(nullptr);
+		last_used = std::chrono::system_clock::now();
 	}
 	
 	if (!sent && response_ready)
@@ -990,7 +989,7 @@ void Protocol::CreateSession(std::string_view name, Violet::UniBuffer *loaded_fi
 	{
 		cookie = r->first;
 		ss = &r->second;
-		ss->last_activity = time(nullptr);
+		ss->last_activity = std::chrono::system_clock::now();
 	}
 	else
 	{

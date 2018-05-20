@@ -255,7 +255,7 @@ struct Protocol::Callback {
 				cb["captcha_seed"] = std::move(c.seed);
 				cb["captcha_image"] = "/captcha." + c.Imt.PicFilename;	// this one is moved in the next step
 				c.Imt.Data = std::async(std::launch::async, Captcha::Image::process, c.Imt.Collection);
-				parent.shared.captcha_sig.emplace_back(std::move(c.Imt), time(nullptr));
+				parent.shared.captcha_sig.emplace_back(std::move(c.Imt), std::chrono::system_clock::now());
 			}
 			break;
 
@@ -304,8 +304,9 @@ struct Protocol::Callback {
 					auto llfile = dir + USERFILE_LASTLOGIN;
 					if (f.read_from_file(llfile.c_str()))
 					{
-						time_t last_login = f.read<time_t>(), now = time(nullptr);
-						auto d = difftime(now, last_login);
+						std::chrono::system_clock::time_point last_login(std::chrono::milliseconds(f.read<long long>())),
+							now = std::chrono::system_clock::now();
+						auto d = std::chrono::duration_cast<std::chrono::seconds>(now - last_login).count();
 						if (d <= 10)
 						{
 							error_msg += "Last login attempt on this account took place ";
@@ -314,7 +315,7 @@ struct Protocol::Callback {
 							break;
 						}
 						f.clear();
-						f.write<time_t>(now);
+						f.write<long long>(now.time_since_epoch().count());
 						f.write_to_file(llfile.c_str());
 					}
 					if (!f.read_from_file((dir + USERFILE_ACC).c_str()))
@@ -456,7 +457,7 @@ struct Protocol::Callback {
 							w.write_to_file((dir + USERFILE_ACC).c_str());
 
 							w.clear();
-							w.write<time_t>( 0x0 );
+							w.write<long long>( 0x0 );
 							w.write_to_file((dir + USERFILE_LASTLOGIN).c_str());
 
 							cb["register_msg"] = "Account `<strong>" + data[0] + "</strong>` has been created.";

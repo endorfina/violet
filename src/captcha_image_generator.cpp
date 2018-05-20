@@ -149,7 +149,7 @@ void Captcha::Image::f(const collection_t &col) {
 			const auto &fig = ff->second;
 			for (int y = 0; y < height; ++y)
 				for (int x = 0; x < partwidth; ++x) {
-					point2<float> p(static_cast<float>(x) / static_cast<float>(partwidth), static_cast<float>(y) / static_cast<float>(height));
+					Violet::point2<float> p(static_cast<float>(x) / static_cast<float>(partwidth), static_cast<float>(y) / static_cast<float>(height));
 					float d = 10.f;
 					if (fig.v.size() > 1) {
 						int b = static_cast<int>(fig.v.size()) - 1;
