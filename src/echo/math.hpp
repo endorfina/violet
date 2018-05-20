@@ -63,7 +63,7 @@ namespace Violet
     }
 
 	template<typename T,
-		typename = std::enable_if_t<std::is_scalar_v<T>>>
+		typename = std::enable_if_t<std::is_arithmetic_v<T>>>
     struct point2
     {
         using value_type = T;
@@ -128,12 +128,12 @@ namespace Violet
 
 
     template<typename T>
-    bool is_inside(const point2<T> (&rect)[4], const point2<T> &p) {
+    constexpr bool is_inside(const point2<T> (&rect)[4], const point2<T> &p) {
         point2<T> axis[2] {
                 { rect[0].x - rect[1].x, rect[0].y - rect[1].y },
                 { rect[0].x - rect[3].x, rect[0].y - rect[3].y }
         };
-        T s, min_a, max_a;
+        T s = 0, min_a = 0, max_a = 0;
         for (unsigned n = 0; n < 2; ++n) {
             for (unsigned i = 0; i < 4; ++i) {
                 s = (((rect[i] * axis[n]) / (axis[n].x * axis[n].x + axis[n].y * axis[n].y))
@@ -154,7 +154,7 @@ namespace Violet
     }
 
     template<typename T>
-    bool collision(const point2<T> (&a)[4], const point2<T> (&b)[4])
+    constexpr bool collision(const point2<T> (&a)[4], const point2<T> (&b)[4])
     {
         point2<T> axis[4] {
                 { a[0].x - a[1].x, a[0].y - a[1].y },
@@ -162,8 +162,8 @@ namespace Violet
                 { b[0].x - b[1].x, b[0].y - b[1].y },
                 { b[0].x - b[3].x, b[0].y - b[3].y }
         };
-        T s, min_a, min_b, max_a, max_b;
-        for (int n = 0, i; n < 4; ++n) {
+        T s = 0, min_a = 0, min_b = 0, max_a = 0, max_b = 0;
+        for (int n = 0, i = 0; n < 4; ++n) {
             for (i = 0; i < 4; ++i) {
                 s = (((a[i] * axis[n]) / (axis[n].x * axis[n].x + axis[n].y * axis[n].y))
                      * axis[n]) % axis[n];
@@ -258,12 +258,12 @@ namespace Violet
             }
         }
 
-        inline value_type * operator [](size_t i) { return m[i]; }
+        inline value_type * operator [](size_t i) const { return m[i]; }
     };
 
 
     template<typename T,
-		typename = std::enable_if_t<std::is_scalar_v<T>>>
+		typename = std::enable_if_t<std::is_arithmetic_v<T>>>
     struct matrix4x4
     {
         using value_type = T;
@@ -297,134 +297,129 @@ namespace Violet
             }
         }
 
-        constexpr static bool __gluInvertMatrix(const value_type (&_mat)[16], value_type (&invOut)[16])
+        constexpr static bool __invert_matrix(value_type (&_mat)[16])
         {
-            value_type inv[16], det;
-            int i = 0;
+            const value_type inv[16]
+            {
+                _mat[5]  * _mat[10] * _mat[15] -
+                _mat[5]  * _mat[11] * _mat[14] -
+                _mat[9]  * _mat[6]  * _mat[15] +
+                _mat[9]  * _mat[7]  * _mat[14] +
+                _mat[13] * _mat[6]  * _mat[11] -
+                _mat[13] * _mat[7]  * _mat[10],
 
-            inv[0] = _mat[5]  * _mat[10] * _mat[15] -
-                    _mat[5]  * _mat[11] * _mat[14] -
-                    _mat[9]  * _mat[6]  * _mat[15] +
-                    _mat[9]  * _mat[7]  * _mat[14] +
-                    _mat[13] * _mat[6]  * _mat[11] -
-                    _mat[13] * _mat[7]  * _mat[10];
+                -_mat[1]  * _mat[10] * _mat[15] +
+                _mat[1]  * _mat[11] * _mat[14] +
+                _mat[9]  * _mat[2] * _mat[15] -
+                _mat[9]  * _mat[3] * _mat[14] -
+                _mat[13] * _mat[2] * _mat[11] +
+                _mat[13] * _mat[3] * _mat[10],
 
-            inv[4] = -_mat[4]  * _mat[10] * _mat[15] +
-                    _mat[4]  * _mat[11] * _mat[14] +
-                    _mat[8]  * _mat[6]  * _mat[15] -
-                    _mat[8]  * _mat[7]  * _mat[14] -
-                    _mat[12] * _mat[6]  * _mat[11] +
-                    _mat[12] * _mat[7]  * _mat[10];
+                _mat[1]  * _mat[6] * _mat[15] -
+                _mat[1]  * _mat[7] * _mat[14] -
+                _mat[5]  * _mat[2] * _mat[15] +
+                _mat[5]  * _mat[3] * _mat[14] +
+                _mat[13] * _mat[2] * _mat[7] -
+                _mat[13] * _mat[3] * _mat[6],
 
-            inv[8] = _mat[4]  * _mat[9] * _mat[15] -
-                    _mat[4]  * _mat[11] * _mat[13] -
-                    _mat[8]  * _mat[5] * _mat[15] +
-                    _mat[8]  * _mat[7] * _mat[13] +
-                    _mat[12] * _mat[5] * _mat[11] -
-                    _mat[12] * _mat[7] * _mat[9];
+                -_mat[1] * _mat[6] * _mat[11] +
+                _mat[1] * _mat[7] * _mat[10] +
+                _mat[5] * _mat[2] * _mat[11] -
+                _mat[5] * _mat[3] * _mat[10] -
+                _mat[9] * _mat[2] * _mat[7] +
+                _mat[9] * _mat[3] * _mat[6],
 
-            inv[12] = -_mat[4]  * _mat[9] * _mat[14] +
-                    _mat[4]  * _mat[10] * _mat[13] +
-                    _mat[8]  * _mat[5] * _mat[14] -
-                    _mat[8]  * _mat[6] * _mat[13] -
-                    _mat[12] * _mat[5] * _mat[10] +
-                    _mat[12] * _mat[6] * _mat[9];
+                -_mat[4]  * _mat[10] * _mat[15] +
+                _mat[4]  * _mat[11] * _mat[14] +
+                _mat[8]  * _mat[6]  * _mat[15] -
+                _mat[8]  * _mat[7]  * _mat[14] -
+                _mat[12] * _mat[6]  * _mat[11] +
+                _mat[12] * _mat[7]  * _mat[10],
 
-            inv[1] = -_mat[1]  * _mat[10] * _mat[15] +
-                    _mat[1]  * _mat[11] * _mat[14] +
-                    _mat[9]  * _mat[2] * _mat[15] -
-                    _mat[9]  * _mat[3] * _mat[14] -
-                    _mat[13] * _mat[2] * _mat[11] +
-                    _mat[13] * _mat[3] * _mat[10];
+                _mat[0]  * _mat[10] * _mat[15] -
+                _mat[0]  * _mat[11] * _mat[14] -
+                _mat[8]  * _mat[2] * _mat[15] +
+                _mat[8]  * _mat[3] * _mat[14] +
+                _mat[12] * _mat[2] * _mat[11] -
+                _mat[12] * _mat[3] * _mat[10],
 
-            inv[5] = _mat[0]  * _mat[10] * _mat[15] -
-                    _mat[0]  * _mat[11] * _mat[14] -
-                    _mat[8]  * _mat[2] * _mat[15] +
-                    _mat[8]  * _mat[3] * _mat[14] +
-                    _mat[12] * _mat[2] * _mat[11] -
-                    _mat[12] * _mat[3] * _mat[10];
+                -_mat[0]  * _mat[6] * _mat[15] +
+                _mat[0]  * _mat[7] * _mat[14] +
+                _mat[4]  * _mat[2] * _mat[15] -
+                _mat[4]  * _mat[3] * _mat[14] -
+                _mat[12] * _mat[2] * _mat[7] +
+                _mat[12] * _mat[3] * _mat[6],
 
-            inv[9] = -_mat[0]  * _mat[9] * _mat[15] +
-                    _mat[0]  * _mat[11] * _mat[13] +
-                    _mat[8]  * _mat[1] * _mat[15] -
-                    _mat[8]  * _mat[3] * _mat[13] -
-                    _mat[12] * _mat[1] * _mat[11] +
-                    _mat[12] * _mat[3] * _mat[9];
+                _mat[0] * _mat[6] * _mat[11] -
+                _mat[0] * _mat[7] * _mat[10] -
+                _mat[4] * _mat[2] * _mat[11] +
+                _mat[4] * _mat[3] * _mat[10] +
+                _mat[8] * _mat[2] * _mat[7] -
+                _mat[8] * _mat[3] * _mat[6],
 
-            inv[13] = _mat[0]  * _mat[9] * _mat[14] -
-                    _mat[0]  * _mat[10] * _mat[13] -
-                    _mat[8]  * _mat[1] * _mat[14] +
-                    _mat[8]  * _mat[2] * _mat[13] +
-                    _mat[12] * _mat[1] * _mat[10] -
-                    _mat[12] * _mat[2] * _mat[9];
+                _mat[4]  * _mat[9] * _mat[15] -
+                _mat[4]  * _mat[11] * _mat[13] -
+                _mat[8]  * _mat[5] * _mat[15] +
+                _mat[8]  * _mat[7] * _mat[13] +
+                _mat[12] * _mat[5] * _mat[11] -
+                _mat[12] * _mat[7] * _mat[9],
 
-            inv[2] = _mat[1]  * _mat[6] * _mat[15] -
-                    _mat[1]  * _mat[7] * _mat[14] -
-                    _mat[5]  * _mat[2] * _mat[15] +
-                    _mat[5]  * _mat[3] * _mat[14] +
-                    _mat[13] * _mat[2] * _mat[7] -
-                    _mat[13] * _mat[3] * _mat[6];
+                -_mat[0]  * _mat[9] * _mat[15] +
+                _mat[0]  * _mat[11] * _mat[13] +
+                _mat[8]  * _mat[1] * _mat[15] -
+                _mat[8]  * _mat[3] * _mat[13] -
+                _mat[12] * _mat[1] * _mat[11] +
+                _mat[12] * _mat[3] * _mat[9],
 
-            inv[6] = -_mat[0]  * _mat[6] * _mat[15] +
-                    _mat[0]  * _mat[7] * _mat[14] +
-                    _mat[4]  * _mat[2] * _mat[15] -
-                    _mat[4]  * _mat[3] * _mat[14] -
-                    _mat[12] * _mat[2] * _mat[7] +
-                    _mat[12] * _mat[3] * _mat[6];
+                _mat[0]  * _mat[5] * _mat[15] -
+                _mat[0]  * _mat[7] * _mat[13] -
+                _mat[4]  * _mat[1] * _mat[15] +
+                _mat[4]  * _mat[3] * _mat[13] +
+                _mat[12] * _mat[1] * _mat[7] -
+                _mat[12] * _mat[3] * _mat[5],
 
-            inv[10] = _mat[0]  * _mat[5] * _mat[15] -
-                    _mat[0]  * _mat[7] * _mat[13] -
-                    _mat[4]  * _mat[1] * _mat[15] +
-                    _mat[4]  * _mat[3] * _mat[13] +
-                    _mat[12] * _mat[1] * _mat[7] -
-                    _mat[12] * _mat[3] * _mat[5];
+                -_mat[0] * _mat[5] * _mat[11] +
+                _mat[0] * _mat[7] * _mat[9] +
+                _mat[4] * _mat[1] * _mat[11] -
+                _mat[4] * _mat[3] * _mat[9] -
+                _mat[8] * _mat[1] * _mat[7] +
+                _mat[8] * _mat[3] * _mat[5],
 
-            inv[14] = -_mat[0]  * _mat[5] * _mat[14] +
-                    _mat[0]  * _mat[6] * _mat[13] +
-                    _mat[4]  * _mat[1] * _mat[14] -
-                    _mat[4]  * _mat[2] * _mat[13] -
-                    _mat[12] * _mat[1] * _mat[6] +
-                    _mat[12] * _mat[2] * _mat[5];
+                -_mat[4]  * _mat[9] * _mat[14] +
+                _mat[4]  * _mat[10] * _mat[13] +
+                _mat[8]  * _mat[5] * _mat[14] -
+                _mat[8]  * _mat[6] * _mat[13] -
+                _mat[12] * _mat[5] * _mat[10] +
+                _mat[12] * _mat[6] * _mat[9],
 
-            inv[3] = -_mat[1] * _mat[6] * _mat[11] +
-                    _mat[1] * _mat[7] * _mat[10] +
-                    _mat[5] * _mat[2] * _mat[11] -
-                    _mat[5] * _mat[3] * _mat[10] -
-                    _mat[9] * _mat[2] * _mat[7] +
-                    _mat[9] * _mat[3] * _mat[6];
+                _mat[0]  * _mat[9] * _mat[14] -
+                _mat[0]  * _mat[10] * _mat[13] -
+                _mat[8]  * _mat[1] * _mat[14] +
+                _mat[8]  * _mat[2] * _mat[13] +
+                _mat[12] * _mat[1] * _mat[10] -
+                _mat[12] * _mat[2] * _mat[9],
 
-            inv[7] = _mat[0] * _mat[6] * _mat[11] -
-                    _mat[0] * _mat[7] * _mat[10] -
-                    _mat[4] * _mat[2] * _mat[11] +
-                    _mat[4] * _mat[3] * _mat[10] +
-                    _mat[8] * _mat[2] * _mat[7] -
-                    _mat[8] * _mat[3] * _mat[6];
+                -_mat[0]  * _mat[5] * _mat[14] +
+                _mat[0]  * _mat[6] * _mat[13] +
+                _mat[4]  * _mat[1] * _mat[14] -
+                _mat[4]  * _mat[2] * _mat[13] -
+                _mat[12] * _mat[1] * _mat[6] +
+                _mat[12] * _mat[2] * _mat[5],
 
-            inv[11] = -_mat[0] * _mat[5] * _mat[11] +
-                    _mat[0] * _mat[7] * _mat[9] +
-                    _mat[4] * _mat[1] * _mat[11] -
-                    _mat[4] * _mat[3] * _mat[9] -
-                    _mat[8] * _mat[1] * _mat[7] +
-                    _mat[8] * _mat[3] * _mat[5];
+                _mat[0] * _mat[5] * _mat[10] -
+                _mat[0] * _mat[6] * _mat[9] -
+                _mat[4] * _mat[1] * _mat[10] +
+                _mat[4] * _mat[2] * _mat[9] +
+                _mat[8] * _mat[1] * _mat[6] -
+                _mat[8] * _mat[2] * _mat[5]
+            };
 
-            inv[15] = _mat[0] * _mat[5] * _mat[10] -
-                    _mat[0] * _mat[6] * _mat[9] -
-                    _mat[4] * _mat[1] * _mat[10] +
-                    _mat[4] * _mat[2] * _mat[9] +
-                    _mat[8] * _mat[1] * _mat[6] -
-                    _mat[8] * _mat[2] * _mat[5];
-
-            det = _mat[0] * inv[0] + _mat[1] * inv[4] + _mat[2] * inv[8] + _mat[3] * inv[12];
-
-            if (det == 0)
-                return false;
-
-            det = 1.0 / det;
-
-            for (i = 0; i < 16; ++i)
-                invOut[i] = inv[i] * det;
-
-            return true;
+            if (const auto det = _mat[0] * inv[0] + _mat[1] * inv[4] + _mat[2] * inv[8] + _mat[3] * inv[12])
+            {
+                std::transform(std::begin(inv), std::end(inv), std::begin(_mat), [det](auto a) { return a / det; });
+                return true;
+            }
+            return false;
         }
 
     public:
@@ -446,7 +441,7 @@ namespace Violet
 
 
         constexpr inline matrix4x4& invert(void) {
-            __gluInvertMatrix(val, val);
+            __invert_matrix(val);
             return *this;
         }
 
@@ -462,7 +457,6 @@ namespace Violet
             _mat.val[13] = y;
             return _mat;
         }
-        //constexpr static matrix4x4 translate(const std::pair<value_type, value_type> &p);
         constexpr static matrix4x4 translate(const point2<value_type> &p) {
             matrix4x4 _mat;
             __set_identity(_mat.val);
@@ -554,7 +548,7 @@ namespace Violet
     };
 
     template<typename T,
-		typename = std::enable_if_t<std::is_scalar_v<T>>>
+		typename = std::enable_if_t<std::is_arithmetic_v<T>>>
     struct matrix4x4_opt : public matrix4x4<T>
     {
         using value_type = typename matrix4x4<T>::value_type;
@@ -562,7 +556,7 @@ namespace Violet
     private:
         constexpr static void __optimised_multiplication(value_type (&dest)[16], const value_type (&first)[16], const value_type (&second)[16])
         {
-            memset(dest, 0, 16 * sizeof(float));
+            memset(dest, 0, 16 * sizeof(value_type));
             dest[0] = first[0] * second[0] + first[1] * second[4];
             dest[1] = first[0] * second[1] + first[1] * second[5];
             dest[4] = first[4] * second[0] + first[5] * second[4];
@@ -594,6 +588,14 @@ namespace Violet
         }
         friend constexpr matrix4x4_opt operator*(matrix4x4_opt lhs, const matrix4x4_opt& rhs) {
             return lhs *= rhs;
+        }
+
+        template<class Mat>
+        constexpr matrix4x4_opt& reverse_multiply(Mat&& other) {
+            value_type _copy[16];
+            memcpy(_copy, this->val, 16 * sizeof(value_type));
+            __optimised_multiplication(this->val, other.val, _copy);
+            return *this;
         }
     };
 }
