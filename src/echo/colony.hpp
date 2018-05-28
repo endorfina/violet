@@ -23,6 +23,7 @@
 #include <vector>
 #include <stack>    // perhaps change later to <priority_queue>, as of now
                     // the lagging skip points aren't being invalidated
+                    // hm -- let me mark that as 'irrelevant'
 
 namespace Violet
 {
@@ -37,7 +38,7 @@ namespace Violet
         using pair_t =          std::pair<pos_t, value_type>;
         using list_t =          std::vector<std::unique_ptr<pair_t[]>>;
         using stack_pair_t =    std::pair<pair_t*, pos_t>;
-        using stack_t = std::stack<stack_pair_t>;
+        using stack_t =         std::stack<stack_pair_t>;
 
         list_t _data;
         stack_t _stack;
@@ -149,10 +150,14 @@ namespace Violet
                 if (ptr->first > 1 && top.second + 1 < ChunkSize) {
                     ptr[1].first = ptr->first - 1;
                 }
-                ptr->first = 0;
+                for (pos_t i = 0; ptr->first > 0; --ptr, ++i) {
+                    ptr->first = i;
+                    if (ptr == top->first)
+                        break;
+                }
                 _stack.pop();
                 ++_inner_size;
-                return *::new(static_cast<void*>(&(ptr->second))) value_type(std::forward<Args>(args)...);
+                return *::new(static_cast<void*>(&((top.first + top.second)->second))) value_type(std::forward<Args>(args)...);
             }
         }
 
