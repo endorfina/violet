@@ -614,7 +614,7 @@ void HttpRequest::parse_cookies(char *s, size_t len)
 				int val;
 				if (sscanf(it->second.data(), "%d", &val) == 1) {
 					r.persistent = true;
-					r.expi = time(nullptr) + (val > 0 ? val : -1);
+					r.expi = std::chrono::system_clock::now() + std::chrono::seconds(val > 0 ? val : -1);
 				}
 				break; // for now
 			}
@@ -623,7 +623,7 @@ void HttpRequest::parse_cookies(char *s, size_t len)
 				tm modt;
 				memset(&modt, 0, sizeof(tm));
 				strptime(it->second.data(), DTFORMAT, &modt);
-				r.expi = mktime(&modt);
+				r.expi = std::chrono::system_clock::from_time_t(mktime(&modt));
 				r.persistent = true;
 			}
 		}
@@ -650,7 +650,7 @@ void HttpRequest::reset()
 	mState = State::notconnected;
 	mSsl = false;
 	response.clear();
-	encoding = Encoding::None;
+	encoding = Encoding::NoEncoding;
 	transfer_chunked = false;
 }
 
@@ -708,9 +708,9 @@ void HttpRequest::connect(const std::string_view& url)
 	requestheaders.emplace("Accept-Encoding", "gzip, deflate", true);
 
 	if (cookies.size() > 0) {
-		auto now = time(nullptr);
+		auto now = std::chrono::system_clock::now();
 		for(auto it = cookies.begin(); it != cookies.end();) {
-			if(it->second.persistent && difftime(now, it->second.expi) > 0)
+			if(it->second.persistent && (now - it->second.expi).count() > 0)
 				it = cookies.erase(it);
 			else
 				++it;

@@ -16,6 +16,7 @@
     You should have received a copy of the GNU General Public License
     along with Violet.  If not, see <http://www.gnu.org/licenses/>.
 */
+#pragma once
 
 #include <type_traits>
 #include <array>
@@ -60,6 +61,11 @@ namespace Violet
     template<typename T>
     constexpr inline T sqr(T a) {
         return a * a;
+    }
+
+    template<typename T>
+    constexpr inline auto degtorad(T a) {
+        return a * T(M_PI) / T(180);
     }
 
 	template<typename T,
@@ -219,6 +225,17 @@ namespace Violet
     };
 
     template<typename T>
+    struct rect {
+        typedef T value_type;
+
+        value_type left, top, right, bottom;
+
+        rect() = default;
+        rect(value_type _l, value_type _t, value_type _r, value_type _b)
+            : left(_l), top(_t), right(_r), bottom(_b) {}
+    };
+
+    template<typename T>
     struct grid {
         typedef T value_type;
 
@@ -262,7 +279,7 @@ namespace Violet
     };
 
 
-    template<typename T,
+    template<typename T, bool GLoptimal = false,
 		typename = std::enable_if_t<std::is_arithmetic_v<T>>>
     struct matrix4x4
     {
@@ -284,13 +301,25 @@ namespace Violet
 
     private:
         constexpr inline static void __set_identity(value_type (&dest)[16]) {
-            dest = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
-            //memcpy(dest, id, 16 * sizeof(float));
+            constexpr std::array<value_type, 16> id = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+            memcpy(dest, id.data(), 16 * sizeof(float));
         }
 
         constexpr static void __multiplication(value_type (&dest)[16], const value_type (&first)[16], const value_type (&second)[16])
         {
-            for (int i = 0; i < 16; ++i) {
+            if constexpr (GLoptimal)
+            {
+                memset(dest, 0, 16 * sizeof(value_type));
+                dest[0] = first[0] * second[0] + first[1] * second[4];
+                dest[1] = first[0] * second[1] + first[1] * second[5];
+                dest[4] = first[4] * second[0] + first[5] * second[4];
+                dest[5] = first[4] * second[1] + first[5] * second[5];
+                dest[10] = 1;
+                dest[12] = first[12] * second[0] + first[13] * second[4] + second[12];
+                dest[13] = first[12] * second[1] + first[13] * second[5] + second[13];
+                dest[15] = 1;
+            }
+            else for (int i = 0; i < 16; ++i) {
                 dest[i] = first[i - (i % 4)] * second[i % 4];
                 for (int n = 1; n < 4; ++n)
                     dest[i] += first[i - (i % 4) + n] * second[(i % 4) + n * 4];
@@ -545,53 +574,9 @@ namespace Violet
             }
             return mat;
         }
-    };
-
-    template<typename T,
-		typename = std::enable_if_t<std::is_arithmetic_v<T>>>
-    struct matrix4x4_opt : public matrix4x4<T>
-    {
-        using value_type = typename matrix4x4<T>::value_type;
-
-    private:
-        constexpr static void __optimised_multiplication(value_type (&dest)[16], const value_type (&first)[16], const value_type (&second)[16])
-        {
-            memset(dest, 0, 16 * sizeof(value_type));
-            dest[0] = first[0] * second[0] + first[1] * second[4];
-            dest[1] = first[0] * second[1] + first[1] * second[5];
-            dest[4] = first[4] * second[0] + first[5] * second[4];
-            dest[5] = first[4] * second[1] + first[5] * second[5];
-            dest[10] = 1;
-            dest[12] = first[12] * second[0] + first[13] * second[4] + second[12];
-            dest[13] = first[12] * second[1] + first[13] * second[5] + second[13];
-            dest[15] = 1;
-        }
-
-    public:
-        constexpr matrix4x4_opt& operator*=(const matrix4x4<value_type>& other){
-            value_type _copy[16];
-            memcpy(_copy, this->val, 16 * sizeof(value_type));
-            __optimised_multiplication(this->val, _copy, other.val);
-            return *this;
-        }
-        constexpr matrix4x4_opt& operator*=(const matrix4x4_opt& other){
-            value_type _copy[16];
-            memcpy(_copy, this->val, 16 * sizeof(value_type));
-            __optimised_multiplication(this->val, _copy, other.val);
-            return *this;
-        }
-        friend constexpr matrix4x4_opt operator*(matrix4x4_opt lhs, const matrix4x4<value_type>& rhs) {
-            return lhs *= rhs;
-        }
-        friend constexpr matrix4x4_opt operator*(matrix4x4<value_type> lhs, const matrix4x4_opt& rhs) {
-            return lhs *= rhs;
-        }
-        friend constexpr matrix4x4_opt operator*(matrix4x4_opt lhs, const matrix4x4_opt& rhs) {
-            return lhs *= rhs;
-        }
 
         template<class Mat>
-        constexpr matrix4x4_opt& reverse_multiply(Mat&& other) {
+        constexpr matrix4x4& reverse_multiply(Mat&& other) {
             value_type _copy[16];
             memcpy(_copy, this->val, 16 * sizeof(value_type));
             __optimised_multiplication(this->val, other.val, _copy);

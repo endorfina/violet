@@ -20,6 +20,7 @@
 #pragma once
 #include <random>
 #include <optional>
+#include <cassert>
 
 namespace Violet
 {

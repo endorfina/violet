@@ -418,6 +418,7 @@ namespace Violet
 		
         inline view_t get_string() const { return { mData.data(), mData.size() }; }
         inline view_t get_string_current() const { return { &mData[mPos], mData.size() - mPos }; }
+		inline container_type && get_rvalue_ref() { return std::move(mData); }
         inline const value_type* data() const { return &mData[0]; }
         inline value_type* data() { return &mData[0]; }
 		inline value_type& operator[](size_type _pos) { return mData[_pos]; };

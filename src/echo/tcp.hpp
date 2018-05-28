@@ -24,6 +24,8 @@
 #include <map>
 #include <variant>
 #include <optional>
+#include <chrono>
+#include <ctime>
 
 #ifdef WIN32
 #include <Winsock2.h>
@@ -345,8 +347,8 @@ namespace Violet
 	public:
 		HttpSocket mSock;
 	private:
-		enum Encoding { None, Deflate, Gzip };
-		Encoding encoding = Encoding::None;
+		enum Encoding { NoEncoding, Deflate, Gzip };
+		Encoding encoding = Encoding::NoEncoding;
 		bool transfer_chunked = false;
 
 	public:
@@ -401,7 +403,7 @@ namespace Violet
 		postparameters;
 
 
-		struct PairsOfStrings {
+		struct pairs_of_strings {
 			using variant_type = std::variant<std::string, std::string_view>;
 			using value_type = std::pair<variant_type, variant_type>;
 			using container = std::vector<value_type>;
@@ -496,7 +498,8 @@ namespace Violet
 			char dt[64];
 			for (auto&&it : cookies)
 				if (it.second.persistent) {
-					tm gmt = *gmtime(&it.second.expi);
+					const auto tt = std::chrono::system_clock::to_time_t(it.second.expi);
+					tm gmt = *gmtime(&tt);
 					strftime(dt, 64, DTFORMAT, &gmt);
 					b << it.first << char('=') << it.second.value << "; EXPIRES=";
 					b.write_data(dt, strlen(dt));

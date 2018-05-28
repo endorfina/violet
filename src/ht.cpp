@@ -61,20 +61,28 @@ inline bool is_meaningful(A c)
 }
 
 
+struct Protocol::Callback
+{
+	struct Reusable
+	{
+		Protocol &parent;
+		map_t cb;
+		const unsigned http_error_code;
 
-struct Protocol::Callback {
-	Protocol &parent;
-	map_t &cb;
+		Reusable(Protocol &_p, unsigned _hec)
+			: parent(_p), http_error_code(_hec) {}
+	};
+
+	Reusable & re;
 	Violet::utf8x::translator<char> &uc;
 	size_t read_pos, pos;
 	Violet::UniBuffer &out;
-	const unsigned http_error_code;
 
 	using wrapped_content_t = std::pair<Violet::UniBuffer, Violet::utf8x::translator<char>>;
 	std::unique_ptr<wrapped_content_t> wrapped_content;
 
-	Callback(Protocol &_p, map_t &_m, Violet::utf8x::translator<char> &_u, Violet::UniBuffer &_o, unsigned _hec)
-		: parent(_p), cb(_m), uc(_u), out(_o), http_error_code(_hec) { pos = read_pos = uc.get_pos(); }
+	Callback(Reusable &_re, Violet::utf8x::translator<char> &_u, Violet::UniBuffer &_o)
+		: re(_re), uc(_u), out(_o) { pos = read_pos = uc.get_pos(); }
 
 	void magic() {
 		while (true) {
@@ -150,14 +158,21 @@ struct Protocol::Callback {
 			}
 			(++u).skip_whitespace();
 		}
-		Callback lets_go_deeper(parent, cb, u, out, http_error_code);
+		Callback lets_go_deeper(re, u, out);
 		lets_go_deeper.magic();
+	}
+
+	void __recursive_stack(Violet::UniBuffer &buff, Blue::HeartFunction &&hf)
+	{
+		write_remainder();
+		Callback lets_go_deeper(re, uc, buff);
+		lets_go_deeper(std::move(hf));
 	}
 
 	void __recursive_stack_ref(Violet::utf8x::translator<char> &u)
 	{
 		write_remainder();
-		Callback lets_go_deeper(parent, cb, u, out, http_error_code);
+		Callback lets_go_deeper(re, u, out);
 		lets_go_deeper.magic();
 	}
 
@@ -167,20 +182,32 @@ struct Protocol::Callback {
 		{
 		case Blue::Function::Echo:
 			if (hf.arg.size() == 1 || hf.arg.size() == 2) {
-					const auto& db = hf.arg.size() == 2 ? parent.info.list(hf.arg[0]) : cb;
+					const auto& db = hf.arg.size() == 2 ? re.parent.info.list(hf.arg[0]) : re.cb;
 					if (auto a = db.find(hf.arg[hf.arg.size() - 1]); a != db.end())
 						out << a->second;
 			}
 			break;
 
+		case Blue::Function::Constant:
+			if (hf.arg.size() == 1 && bool(hf.chain)) {
+				Violet::UniBuffer tbuff;
+				__recursive_stack(tbuff, std::move(*hf.chain));
+				hf.chain.release();
+				re.cb[std::string(hf.arg[0])] = std::string(tbuff.get_string());
+			}
+			else if (hf.arg.size() == 2) {
+				re.cb[std::string(hf.arg[0])] = std::string(hf.arg[1]);
+			}
+			break;
+
 		case Blue::Function::StatusErrorCode:
-			if (http_error_code) {
-				out.write(std::to_string(http_error_code));
+			if (re.http_error_code) {
+				out.write(std::to_string(re.http_error_code));
 			}
 			break;
 
 		case Blue::Function::StatusErrorText:
-			switch (http_error_code)
+			switch (re.http_error_code)
 				{
 				case 400:
 					out.write("Bad Request"sv);
@@ -204,8 +231,8 @@ struct Protocol::Callback {
 			break;
 
 		case Blue::Function::Copyright:
-			if (!!parent.shared.var_copyright.length())
-				out.write(parent.shared.var_copyright);
+			if (!!re.parent.shared.var_copyright.length())
+				out.write(re.parent.shared.var_copyright);
 			break;
 
 		case Blue::Function::Battery:
@@ -252,26 +279,26 @@ struct Protocol::Callback {
 				Captcha::Init c;
 				c.set_up(true);
 				
-				cb["captcha_seed"] = std::move(c.seed);
-				cb["captcha_image"] = "/captcha." + c.Imt.PicFilename;	// this one is moved in the next step
+				re.cb["captcha_seed"] = std::move(c.seed);
+				re.cb["captcha_image"] = "/captcha." + c.Imt.PicFilename;	// this one is moved in the next step
 				c.Imt.Data = std::async(std::launch::async, Captcha::Image::process, c.Imt.Collection);
-				parent.shared.captcha_sig.emplace_back(std::move(c.Imt), std::chrono::system_clock::now());
+				re.parent.shared.captcha_sig.emplace_back(std::move(c.Imt), std::chrono::system_clock::now());
 			}
 			break;
 
 		case Blue::Function::StartSession:
-			if (const auto argc = hf.arg.size(); argc > 1 && parent.ss == nullptr && parent.shared.dir_accounts)
+			if (const auto argc = hf.arg.size(); argc > 1 && re.parent.ss == nullptr && re.parent.shared.dir_accounts)
 			{
 				//const size_t count = tag.GetObjCount();
 				std::vector<std::string> data;
 				std::string error_msg;
-				while (parent.info.method == Hi::Method::Post)
+				while (re.parent.info.method == Hi::Method::Post)
 				{
 					bool ok = true;
 					const char * e = "Invalid username and/or password.<br>";
 					data.reserve(argc);
 					for (unsigned i = 0; i < argc; ++i)
-						if (auto p = parent.info.post.find(hf.arg[i]); p != parent.info.post.end())
+						if (auto p = re.parent.info.post.find(hf.arg[i]); p != re.parent.info.post.end())
 							data.emplace_back(p->second);
 						else
 							ok = false;
@@ -286,7 +313,7 @@ struct Protocol::Callback {
 						data[0].resize(data[0].length() - 1);
 					auto ct = std::remove_if(data[0].begin(), data[0].end(), [](char c) { return (c == '\"' || c == '\''); });
 					data[0].erase(ct, data[0].end());
-					cb[static_cast<std::string>(hf.arg[0])] = data[0];
+					re.cb[static_cast<std::string>(hf.arg[0])] = data[0];
 					{
 						auto e = std::find_if(data[0].begin(), data[0].end(), [&](char c) { return !is_username_acceptable(c); });
 						if (e != data[0].end())
@@ -296,7 +323,7 @@ struct Protocol::Callback {
 						}
 					}
 					std::string dir(dir_work);
-					ensure_closing_slash(dir += parent.shared.dir_accounts);
+					ensure_closing_slash(dir += re.parent.shared.dir_accounts);
 					auto pos = dir.length();
 					dir += data[0];
 					std::transform(dir.begin() + pos, dir.end(), dir.begin() + pos, ::tolower);
@@ -341,20 +368,20 @@ struct Protocol::Callback {
 					if (!ok) break;
 					f.set_pos(20);
 					auto stt = f.read_data(f.read<uint16_t>());
-					parent.CreateSession(stt, &f);
+					re.parent.CreateSession(stt, &f);
 					break;
 				}
 				if (!!error_msg.length())
-					cb["session_error"] = std::move(error_msg);
+					re.cb["session_error"] = std::move(error_msg);
 				
 				if (!!data.size()) {
 #ifndef WRITE_DATES_ONLY_ON_HEADERS
 					WriteDateToLog();
 #endif
 					std::lock_guard<std::mutex> lock(Protocol::logging.first);
-					if (parent.ss) {
-						Protocol::logging.second << " * User `"sv << parent.ss->username << "` successfully logged in."sv;
-						printf(" > logon: `%s`\r\n", parent.ss->username.c_str());
+					if (re.parent.ss) {
+						Protocol::logging.second << " * User `"sv << re.parent.ss->username << "` successfully logged in."sv;
+						printf(" > logon: `%s`\r\n", re.parent.ss->username.c_str());
 					}
 					else {
 						Protocol::logging.second << " * Failed login attempt! Handle used: "sv << data[0];
@@ -365,19 +392,19 @@ struct Protocol::Callback {
 			break;
 
 		case Blue::Function::KillSession:
-			if (!hf.arg.size() && parent.ss != nullptr)
+			if (!hf.arg.size() && re.parent.ss != nullptr)
 			{
 				std::string name;
-				auto amt = parent.shared.sessions.size();
-				for (auto it = parent.shared.sessions.begin(); it != parent.shared.sessions.end(); ++it)
-					if (&it->second == parent.ss)
+				auto amt = re.parent.shared.sessions.size();
+				for (auto it = re.parent.shared.sessions.begin(); it != re.parent.shared.sessions.end(); ++it)
+					if (&it->second == re.parent.ss)
 					{
 						name = it->second.username;
-						it = parent.shared.sessions.erase(it);
+						it = re.parent.shared.sessions.erase(it);
 						break;
 					}
 					
-				if (amt > parent.shared.sessions.size())
+				if (amt > re.parent.shared.sessions.size())
 				{
 					char str[65];
 					snprintf(str, 64, " > Session `%s` closed by user.", name.c_str());
@@ -388,22 +415,22 @@ struct Protocol::Callback {
 					std::lock_guard<std::mutex> lock(Protocol::logging.first);
 					Protocol::logging.second << str << "\r\n"sv;
 				}
-				parent.ss = nullptr;
-				parent.info.AddHeader("Set-Cookie", SESSION_KILL_CMD);
+				re.parent.ss = nullptr;
+				re.parent.info.AddHeader("Set-Cookie", SESSION_KILL_CMD);
 			}
 			break;
 
 		case Blue::Function::Register:
-			if (const auto argc = hf.arg.size(); argc == 6 && parent.ss == nullptr && parent.shared.dir_accounts)
+			if (const auto argc = hf.arg.size(); argc == 6 && re.parent.ss == nullptr && re.parent.shared.dir_accounts)
 			{
 				std::string error_msg;
-				if (parent.info.method == Hi::Method::Post)
+				if (re.parent.info.method == Hi::Method::Post)
 				{
 					bool ok = true;
 					std::vector<std::string> data;
 					data.reserve(argc);
 					for (unsigned i = 0; i < argc; ++i)
-						if (auto p = parent.info.post.find(hf.arg[i]); p != parent.info.post.end())
+						if (auto p = re.parent.info.post.find(hf.arg[i]); p != re.parent.info.post.end())
 							data.emplace_back(p->second);
 						else
 							ok = false;
@@ -416,12 +443,12 @@ struct Protocol::Callback {
 					data[0].erase(ct, data[0].end());
 					ct = std::remove_if(data[3].begin(), data[3].end(), has_quotes);
 					data[3].erase(ct, data[3].end());
-					cb[static_cast<std::string>(hf.arg[0])] = data[0];
-					cb[static_cast<std::string>(hf.arg[3])] = data[3];
+					re.cb[static_cast<std::string>(hf.arg[0])] = data[0];
+					re.cb[static_cast<std::string>(hf.arg[3])] = data[3];
 					if (!ok) break;
 					else {
 						std::string dir(dir_work);
-						ensure_closing_slash(dir += parent.shared.dir_accounts);
+						ensure_closing_slash(dir += re.parent.shared.dir_accounts);
 						auto pos = dir.length();
 						dir += data[0];
 						std::transform(dir.begin() + pos, dir.end(), dir.begin() + pos, ::tolower);
@@ -460,9 +487,9 @@ struct Protocol::Callback {
 							w.write<std::chrono::microseconds::rep>( 0x0 );
 							w.write_to_file((dir + USERFILE_LASTLOGIN).c_str());
 
-							cb["register_msg"] = "Account `<strong>" + data[0] + "</strong>` has been created.";
+							re.cb["register_msg"] = "Account `<strong>" + data[0] + "</strong>` has been created.";
 
-							parent.CreateSession(data[0], nullptr);
+							re.parent.CreateSession(data[0], nullptr);
 
 #ifndef WRITE_DATES_ONLY_ON_HEADERS
 							WriteDateToLog();
@@ -474,20 +501,18 @@ struct Protocol::Callback {
 					}
 				}
 				if (error_msg.length())
-					cb["session_error"] = std::move(error_msg);
+					re.cb["session_error"] = std::move(error_msg);
 			}
 			break;
 
 		case Blue::Function::SessionInfo:
-			if (parent.ss != nullptr && hf.arg.size() == 1)
+			if (re.parent.ss != nullptr && hf.arg.size() == 1)
 			{
 				if (hf.arg[0] == "name")
-					out.write(parent.ss->username);
+					out.write(re.parent.ss->username);
 			}
 			break;
-
-		case Blue::Function::Constant:
-			//if ()
+			
 		default:
 			out.write(u8"\u2764\ufe0f"sv);
 		}
@@ -503,25 +528,25 @@ struct Protocol::Callback {
 		do {
 			if (tb.sub.empty()) {
 				if (tb.name == "Session") {
-					if (parent.ss != nullptr)
+					if (re.parent.ss != nullptr)
 						skip = false;
 					break;
 				}
 				else if (tb.name == "NoSession") {
-					if (parent.ss == nullptr)
+					if (re.parent.ss == nullptr)
 						skip = false;
 					break;
 				}
 				else if (tb.name == "Userlevel") {
-					if (parent.ss != nullptr) {
+					if (re.parent.ss != nullptr) {
 						if (tb.op == Blue::Operator::none)
 							skip = false;
 						else
 							if (auto val = std::get_if<long>(&tb.comp_val))
 								switch(tb.op) {
-									case Blue::Operator::equality: skip = !(parent.ss->userlevel == *val); break;
-									case Blue::Operator::lessthan: skip = !(parent.ss->userlevel < *val); break;
-									case Blue::Operator::greaterthan: skip = !(parent.ss->userlevel > *val); break;
+									case Blue::Operator::equality: skip = !(re.parent.ss->userlevel == *val); break;
+									case Blue::Operator::lessthan: skip = !(re.parent.ss->userlevel < *val); break;
+									case Blue::Operator::greaterthan: skip = !(re.parent.ss->userlevel > *val); break;
 								}
 					}
 					break;
@@ -529,7 +554,7 @@ struct Protocol::Callback {
 			}
 
 			{
-				const auto& db = tb.sub.empty() ? cb : parent.info.list(tb.name);
+				const auto& db = tb.sub.empty() ? re.cb : re.parent.info.list(tb.name);
 				if (auto g = db.find(tb.sub.empty() ? tb.name : tb.sub); g != db.end())
 				{
 					if (tb.op == Blue::Operator::none) {
@@ -597,8 +622,8 @@ std::optional<Violet::UniBuffer> Protocol::HandleHTML(const std::string_view &h,
 	if (uc.get_and_iterate() == Blue::Codepoints::ChequeredFlag)
 	{
 		Violet::UniBuffer output;
-		map_t clipboard;
-		Callback call(*this, clipboard, uc, output, error);
+		Callback::Reusable re(*this, error);
+		Callback call(re, uc, output);
 		output.write(std::array<unsigned char, 3>{ 0xef, 0xbb, 0xbf });
 
 		try {
