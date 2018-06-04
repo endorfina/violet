@@ -21,6 +21,7 @@
 #include <random>
 #include <optional>
 #include <cassert>
+#include "utf8.hpp"
 
 namespace Violet
 {

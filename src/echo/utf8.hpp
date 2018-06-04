@@ -165,33 +165,33 @@ namespace Violet::utf8x
             *it++ = static_cast<uint8_t>(code);
         else if (code < 0x800) {
             *it++ = static_cast<uint8_t>(code >> 6) | 0xc0;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
         }
         else if (code < 0x10000) {
             *it++ = static_cast<uint8_t>(code >> 12) | 0xe0;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
         }
         else if (code < 0x200000) { // Should end at 0x110000 according to the RFC 3629
             *it++ = static_cast<uint8_t>(code >> 18) | 0xf0;
-            *it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 12) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
         }
         else if (code < 0x4000000) {
             *it++ = static_cast<uint8_t>(code >> 24) | 0xf8;
-            *it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 18) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 12) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
         }
         else if (code < 0x80000000) {
             *it++ = static_cast<uint8_t>(code >> 30) | 0xfc;
-            *it++ = static_cast<uint8_t>(code >> 24) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 24) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 18) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 12) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
         }
         //else return put(it, 0xfffd); // The replacement character?
         // rather, don't write anything
@@ -209,37 +209,37 @@ namespace Violet::utf8x
             
         case 2:
             *it++ = static_cast<uint8_t>(code >> 6) | 0xc0;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
             break;
             
         case 3:
             *it++ = static_cast<uint8_t>(code >> 12) | 0xe0;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
             break;
             
         case 4:
             *it++ = static_cast<uint8_t>(code >> 18) | 0xf0;
-            *it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 12) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
             break;
             
         case 5:
             *it++ = static_cast<uint8_t>(code >> 24) | 0xf8;
-            *it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 18) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 12) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
             break;
             
         case 6:
             *it++ = static_cast<uint8_t>(code >> 30) | 0xfc;
-            *it++ = static_cast<uint8_t>(code >> 24) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 18) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 12) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code >> 6) & 0x3f | 0x80;
-            *it++ = static_cast<uint8_t>(code) & 0x3f | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 24) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 18) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 12) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code >> 6) & 0x3f) | 0x80;
+            *it++ = (static_cast<uint8_t>(code) & 0x3f) | 0x80;
             break;
         }
         return it;

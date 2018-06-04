@@ -19,7 +19,6 @@
 
 #pragma once
 
-//#define _USE_STRITZ_ENCODING
 #include <cstdio>
 #include <memory.h>  // memset
 #include <string>
@@ -28,6 +27,7 @@
 #include <string_view>
 #include <type_traits>
 #include <algorithm>	// tolower
+#include <numeric>
 
 #ifndef VIOLET_NO_COMPILE_COMPRESSION
 #include <zlib.h>
@@ -190,7 +190,7 @@ namespace Violet
 
 	template<class Container = std::vector<char>,
 		typename = std::enable_if_t<sizeof(typename Container::value_type) == 1>>
-	class Buffer
+	class buffer
 	{
 	public:
 		using container_type = Container;
@@ -224,7 +224,7 @@ namespace Violet
 		// Buffer() =default;
         // Buffer(Buffer &&other) { swap(other); };  // defualt is perfectly performant here
 
-		void swap(Buffer& other) {
+		void swap(buffer& other) {
 			mData.swap(other.mData);
 			std::swap(mPos, other.mPos);
 		}
@@ -244,17 +244,33 @@ namespace Violet
 		void read_from_mem(const void* mem_start, size_t mem_size) {
 			clear();
 			if (mem_size > 0)
-				mData.assign(reinterpret_cast<typename container_type::const_pointer>(mem_start), reinterpret_cast<typename container_type::const_pointer>(mem_start) + mem_size);
+				mData.assign(reinterpret_cast<typename container_type::const_pointer>(mem_start),
+                reinterpret_cast<typename container_type::const_pointer>(mem_start) + mem_size);
 		}
 		bool read_from_file(const char* filename) { clear(); return internal::read_from_file(filename, mData); }
 		bool read_from_file(const char* filename, size_t _pos, size_t _len) { clear(); return internal::read_from_file(filename, mData, _pos, _len); }
 		inline void write_to_file(const char* filename) { internal::write_to_file(filename, mData, false); }
 		inline void append_to_file(const char* filename) { internal::write_to_file(filename, mData, true); }
 
-		void rc4_crypt(const view_t& key) { internal::rc4_crypt(reinterpret_cast<unsigned char*>(mData.data()), mData.size(), reinterpret_cast<const unsigned char*>(key.data()), key.size()); }
-#ifdef _USE_STRITZ_ENCODING
-		void spritz_algoritm(const char* key, unsigned keylen);
-#endif
+		void rc4_crypt(const view_t& key)
+        {
+            std::array<unsigned char, 256> table;
+            unsigned char i = 0, j = 0;
+            std::iota(table.begin(), table.end(), 0);
+            for (unsigned k = 0; k < 256; ++k) {
+                j += table[k] + key[k % key.length()];
+                std::swap(table[k], table[j]);
+            }
+            j = 0;
+            for (unsigned k = 0; k < mData.size(); ++k) {
+                j += table[++i];
+                std::swap(table[i], table[j]);
+                mData[k] ^= table[static_cast<unsigned char>(table[i] + table[j])];
+            }
+        }
+// #ifdef _USE_STRITZ_ENCODING
+// 		void spritz_algoritm(const char* key, unsigned keylen);
+// #endif
 
 #ifndef VIOLET_NO_COMPILE_COMPRESSION
 		void zlib_compress() {
@@ -272,14 +288,14 @@ namespace Violet
 			return true;
 		}
 
-		static Buffer zlib_compress(const view_t &data, bool gzip) {
-			Buffer retn;
+		static buffer zlib_compress(const view_t &data, bool gzip) {
+			buffer retn;
 			internal::zlib(data.data(), data.size(), retn.mData, true, gzip);
 			return retn;
 		}
 
-		static Buffer zlib_uncompress(const view_t& data, bool gzip) {
-			Buffer retn;
+		static buffer zlib_uncompress(const view_t& data, bool gzip) {
+			buffer retn;
 			internal::zlib(data.data(), data.size(), retn.mData, false, gzip);
 			return retn;
 		}
@@ -404,7 +420,7 @@ namespace Violet
 			}
 		}
 
-		void write_buffer(const Buffer& b, size_t _pos, size_t _len) {
+		void write_buffer(const buffer& b, size_t _pos, size_t _len) {
 			if(_pos > b.mData.size()) _pos = b.mData.size();
 			if(_len > b.mData.size() - _pos) _len = b.mData.size() - _pos;
 			if(_len != 0) {
@@ -444,7 +460,7 @@ namespace Violet
 		// }
 
 		template<class A>
-		Buffer &operator<<(A&&x) {
+		buffer &operator<<(A&&x) {
 			if constexpr (std::is_convertible_v<A, std::string_view>)
 				write<std::string_view>(x);
 			else
@@ -453,16 +469,16 @@ namespace Violet
 		}
 
 		template<class A>
-		Buffer &operator>>(A &x) {
+		buffer &operator>>(A &x) {
 			x = read<A>();
 			return *this;
 		}
 	};
 
-	using UniBuffer = Buffer<std::vector<char>>;
+	using UniBuffer = buffer<std::vector<char>>;
 
 	template<typename Val = char, typename = std::enable_if_t<std::is_trivial_v<Val>>> 
-	struct StaticData {
+	struct static_data {
 		using value_type = Val;
 		using size_type = std::size_t;
 		using view_t = std::basic_string_view<value_type>;
@@ -491,127 +507,35 @@ namespace Violet
 		}
 
         void resize(size_t newlength) {
-			if (!newlength) {
+            if (newlength == _size)
+                return;
+			else if (!newlength) {
 				clear();
 			}
-			else if (auto newptr = realloc(_data, newlength * sizeof(value_type))) {
+			else if (auto newptr = realloc(_data, 1 + newlength * sizeof(value_type))) {
 				_data = newptr;
-				_size = newlength;
-				//_data[newlength] = 0x0;
+				_data[_size = newlength] = 0x0;
 			}
 			else {
 				clear();
 			}
 		}
 
-		void swap(StaticData & other) {
+		void swap(static_data & other) {
 			std::swap(other._data, _data);
 			std::swap(other._size, _size);
 		}
 		
-		StaticData() = default;
+		static_data() = default;
 
-		StaticData(const StaticData&) = delete;
-		StaticData& operator=(const StaticData&) = delete;
+		static_data(const static_data&) = delete;
+		static_data& operator=(const static_data&) = delete;
 
-		StaticData(StaticData&& from) { from.swap(*this); }
-		StaticData& operator=(StaticData&& from)  { from.swap(*this); return *this; }
+		static_data(static_data&& from) { from.swap(*this); }
+		static_data& operator=(static_data&& from)  { from.swap(*this); return *this; }
 		
-		~StaticData() { clear(); }
-	};
-
-#ifndef VIOLET_NO_COMPILE_HASHES
-	template<std::size_t IntCount>
-    class HashFunction {
-	protected:
-        union {
-            unsigned int w[IntCount];
-            unsigned char x[IntCount * sizeof(int)];
-        } m_result;
-        union {
-            unsigned int w[16];
-            unsigned char x[16 * sizeof(int)];
-        } m_block;
-
-		unsigned int used = 0; // 0 <= used < 64
-	private:
-		bool has_result = false;
-	protected:
-		virtual void do_hash(void) = 0;
-		virtual void finish(void) = 0;
-		virtual void increment(void) = 0;
-    public:
-        inline const char* result() {
-			if (!has_result) {
-				finish();
-				has_result = true;
-			}
-			return reinterpret_cast<const char*>(m_result.x);
-		}
-
-		void push(const uint8_t *in, size_t len) {
-			if (len > 0 && !has_result) {
-				uint32_t j = 0;
-				while (len - j >= 64 - used) {
-					memcpy(m_block.x + used, in + j, 64 - used);
-					j += 64 - used;
-					do_hash();
-					increment();
-					used = 0;
-				}
-				if (len - j > 0) {
-					memcpy(m_block.x + used, in + j, len - j);
-					used += len - j;
-				}
-			}
-		}
-
-		template<class Container>
-		HashFunction &operator<<(const Container &src) {
-			this->push(reinterpret_cast<const uint8_t *>(src.data()), src.size() * sizeof(typename Container::value_type));
-			return *this;
-		}
-    };
-
-	class MD5 : public HashFunction<4>
-	{
-		unsigned int blocks;
-
-	public:
-		MD5();
-	
-	private:
-		void do_hash();
-		void finish();
-		void increment();
-	};
-
-	class SHA1 : public HashFunction<5>
-	{
-		unsigned int blocks;
-
-	public:
-		SHA1();
-	
-	private:
-		void do_hash();
-		void finish();
-		void increment();
-	};
-
-	class SHA256 : public HashFunction<8>
-	{
-		unsigned int blocks1, blocks2;
-
-	public:
-		SHA256();
-	
-	private:
-		void do_hash();
-		void finish();
-		void increment();
+		~static_data() { clear(); }
 	};
 }
-#endif
 
 #include "misc.hpp"

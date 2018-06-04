@@ -115,8 +115,9 @@ namespace Violet
 
         inline void clear() {
             _data.clear();
-            _stack.clear();
             _inner_size = 0;
+            while (!!_stack.size())
+                _stack.pop();
         }
 
         inline typename iterator::__end_sentinel end(void) { return {}; }
@@ -152,7 +153,7 @@ namespace Violet
                 }
                 for (pos_t i = 0; ptr->first > 0; --ptr, ++i) {
                     ptr->first = i;
-                    if (ptr == top->first)
+                    if (ptr == top.first)
                         break;
                 }
                 _stack.pop();

@@ -74,8 +74,8 @@ namespace Violet
     {
         using value_type = T;
         value_type x, y;
-        point2() = default;
-        point2(value_type a, value_type b) : x(a), y(b) {}
+        constexpr point2() = default;
+        constexpr point2(value_type a, value_type b) : x(a), y(b) {}
 
         constexpr point2 &operator+=(const point2 & other) {
 			x += other.x;
@@ -205,9 +205,9 @@ namespace Violet
     {
         using value_type = T;
         value_type r = 0, g = 0, b = 0, a = 1;
-        color() = default;
-        color(value_type _r, value_type _g, value_type _b) : r(_r), g(_g), b(_b) {}
-        color(value_type _r, value_type _g, value_type _b, value_type _a) : r(_r), g(_g), b(_b), a(_a) {}
+        constexpr color() = default;
+        constexpr color(value_type _r, value_type _g, value_type _b) : r(_r), g(_g), b(_b) {}
+        constexpr color(value_type _r, value_type _g, value_type _b, value_type _a) : r(_r), g(_g), b(_b), a(_a) {}
 
         constexpr static color greyscale(value_type x, value_type a = 1) {
             return { x, x, x, a };
@@ -230,8 +230,8 @@ namespace Violet
 
         value_type left, top, right, bottom;
 
-        rect() = default;
-        rect(value_type _l, value_type _t, value_type _r, value_type _b)
+        constexpr rect() = default;
+        constexpr rect(value_type _l, value_type _t, value_type _r, value_type _b)
             : left(_l), top(_t), right(_r), bottom(_b) {}
     };
 
@@ -286,7 +286,7 @@ namespace Violet
         using value_type = T;
         value_type val[16];
 
-        matrix4x4() = default;
+        constexpr matrix4x4() = default;
 
         matrix4x4(const std::array<value_type, 16>& _m) noexcept { memcpy(val, _m.data(), 16 * sizeof(value_type)); }
 
@@ -511,6 +511,15 @@ namespace Violet
             _mat.val[13] = -p.y * h + p.y;
             return _mat;
         }
+        constexpr static inline matrix4x4 scale(value_type sc, const point2<value_type> &p) {
+            matrix4x4 _mat;
+            __set_identity(_mat.val);
+            _mat.val[0] = sc;
+            _mat.val[5] = sc;
+            _mat.val[12] = -p.x * sc + p.x;
+            _mat.val[13] = -p.y * sc + p.y;
+            return _mat;
+        }
         constexpr static inline matrix4x4 scale(value_type sc) {
             matrix4x4 _mat;
             __set_identity(_mat.val);
@@ -562,15 +571,16 @@ namespace Violet
         }
 
         constexpr static matrix4x4 orthof(value_type l, value_type r, value_type t, value_type b, value_type n, value_type f) {
-            value_type mat[16]{ 0 };
+            matrix4x4 mat;
+            __set_identity(mat.val);
             if (r != l && t != b && f != n) {
-                mat[0] = 2 / (r - l);
-                mat[5] = 2 / (t - b);
-                mat[10] = -2 / (f - n);
-                mat[15] = 1.f;
-                mat[14] = -((f + n) / (f - n));
-                mat[13] = -((t + b) / (t - b));
-                mat[12] = -((r + l) / (r - l));
+                mat.val[0] = 2 / (r - l);
+                mat.val[5] = 2 / (t - b);
+                mat.val[10] = -2 / (f - n);
+                mat.val[15] = 1.f;
+                mat.val[14] = -((f + n) / (f - n));
+                mat.val[13] = -((t + b) / (t - b));
+                mat.val[12] = -((r + l) / (r - l));
             }
             return mat;
         }
@@ -579,8 +589,15 @@ namespace Violet
         constexpr matrix4x4& reverse_multiply(Mat&& other) {
             value_type _copy[16];
             memcpy(_copy, this->val, 16 * sizeof(value_type));
-            __optimised_multiplication(this->val, other.val, _copy);
+            __multiplication(this->val, other.val, _copy);
             return *this;
         }
     };
+
+    template<class Mat, typename T, typename = std::enable_if_t<std::is_same_v<T, typename std::remove_cv_t<std::remove_reference_t<Mat>>::value_type>>>
+    constexpr point2<T> operator*(Mat&& mat, const point2<T> & p)
+    {
+        return { mat.val[0] * p.x + mat.val[4] * p.y + mat.val[12],
+                 mat.val[1] * p.x + mat.val[5] * p.y + mat.val[13] };
+    }
 }
