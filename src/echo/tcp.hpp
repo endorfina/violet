@@ -158,7 +158,7 @@ namespace Violet
 	template<class TempStorage>
 	struct Socket : public BaseSocket {
 		using BaseSocket::BaseSocket; // making the constructor visible is mandatory
-		using buffer_t = Violet::Buffer<TempStorage>;
+		using buffer_t = Violet::buffer<TempStorage>;
 		buffer_t mReadbuffer, mWritebuffer;
 
 		void reset() {

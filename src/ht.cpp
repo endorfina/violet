@@ -20,6 +20,7 @@
 #include "pch.h"
 #include "protocol.hpp"
 #include "bluescript.hpp"
+#include "echo/hash.hpp"
 
 using namespace std::string_view_literals;
 using map_t = Protocol::Hi::map_t;
@@ -351,7 +352,7 @@ struct Protocol::Callback
 						break;
 					}
 					{
-						Violet::SHA1 sha1;
+						Violet::hash<Violet::SHA1> sha1;
 						Violet::UniBuffer salt;
 						salt.read_from_file((dir + USERFILE_SALT).c_str());
 						sha1 << data[1];
@@ -466,7 +467,7 @@ struct Protocol::Callback
 							mkdir(dir.c_str(), 0700);
 							w.write_to_file((dir + USERFILE_SALT).c_str());
 
-							Violet::SHA1 sha1;
+							Violet::hash<Violet::SHA1> sha1;
 							sha1 << data[1] << w;
 
 							w.clear();

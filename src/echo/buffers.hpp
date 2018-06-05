@@ -121,9 +121,6 @@ namespace Violet
 
 		void rc4_crypt(unsigned char *out, std::size_t size, const unsigned char *key, std::size_t keysize);
 
-		std::string base64_encode(const std::string_view &str);
-		std::string base64_decode(const std::string_view &str);
-
 #ifndef VIOLET_NO_COMPILE_COMPRESSION
 		template <class Container>
 		bool zlib(const char *in, const size_t in_size, Container &out, const bool compress, const bool gzip)
@@ -512,12 +509,13 @@ namespace Violet
 			else if (!newlength) {
 				clear();
 			}
-			else if (auto newptr = realloc(_data, 1 + newlength * sizeof(value_type))) {
+			else if (const auto newptr =
+                        reinterpret_cast<value_type *>(realloc(_data, 1 + newlength * sizeof(value_type)))) {
 				_data = newptr;
 				_data[_size = newlength] = 0x0;
 			}
 			else {
-				clear();
+				throw std::bad_alloc();
 			}
 		}
 

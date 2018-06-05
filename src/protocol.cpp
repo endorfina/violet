@@ -463,7 +463,7 @@ void Protocol::Hi::Print()
 
 
 template<class T>
-inline unsigned int ReadUnsignedInt(Violet::Buffer<T> &src, uint8_t bytes = 2)
+inline unsigned int ReadUnsignedInt(Violet::buffer<T> &src, uint8_t bytes = 2)
 {
 	unsigned int i = 0;
 	while (bytes > 1)

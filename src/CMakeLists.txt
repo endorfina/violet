@@ -38,7 +38,7 @@ set(CMAKE_EXE_LINKER_FLAGS "-pthread")
 
 include_directories(${PROJECT_SOURCE_DIR}/echo)
 add_library(echo STATIC
-            echo/buffers.cpp
+            echo/hash.cpp
             echo/tcp.cpp)
 
 add_executable(violet
