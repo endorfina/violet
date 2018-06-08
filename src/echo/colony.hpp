@@ -27,14 +27,14 @@
 
 namespace Violet
 {
-    template<typename A, unsigned int ChunkSize = 256,
-            typename = std::enable_if_t<std::is_trivially_destructible_v<A> && ChunkSize >= 8>>
+    template<typename A, unsigned int ChunkSize = 256, typename Int = unsigned int,
+            typename = std::enable_if_t<std::is_trivially_destructible_v<A> && ChunkSize >= 8 && std::is_integral_v<Int>>>
     class colony {
     public:
         using value_type = A;
 
     private:
-        using pos_t =           unsigned int;
+        using pos_t =           Int;
         using pair_t =          std::pair<pos_t, value_type>;
         using list_t =          std::vector<std::unique_ptr<pair_t[]>>;
         using stack_pair_t =    std::pair<pair_t*, pos_t>;

@@ -288,11 +288,11 @@ namespace Violet
 
         constexpr matrix4x4() = default;
 
-        matrix4x4(const std::array<value_type, 16>& _m) noexcept { memcpy(val, _m.data(), 16 * sizeof(value_type)); }
+        constexpr matrix4x4(const std::array<value_type, 16>& _m) noexcept { memcpy(val, _m.data(), 16 * sizeof(value_type)); }
 
-        matrix4x4(value_type (&_m)[16]) { memcpy(val, _m, 16 * sizeof(value_type)); }
+        constexpr matrix4x4(value_type (&_m)[16]) { memcpy(val, _m, 16 * sizeof(value_type)); }
 
-        matrix4x4(value_type * _m) { memcpy(val, _m, 16 * sizeof(value_type)); }
+        constexpr matrix4x4(value_type * _m) { memcpy(val, _m, 16 * sizeof(value_type)); }
 
 
         constexpr inline operator const value_type *() const { return val; }
